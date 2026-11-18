@@ -64,7 +64,7 @@
   window.addEventListener('scroll', hideTileTip, {passive: true});
   function tile(r, M, prevCut) {
     const t = el('div', 'pl-tile ' + tone(r)), l = el('div', 'pl-tl');
-    const tot = / всего$/.test(r.label);
+    const tot = /, всего$/.test(r.label);
     l.append(el('span', '', r.prod ? r.label.replace(/, (SFA|POS)$/, '') : r.label.replace(/, всего$/, '')));
     if (r.prod) l.append(el('span', 'pl-chip ' + r.prod.toLowerCase(), r.prod));
     else if (tot) l.append(el('span', 'pl-chip all', 'ВСЕГО'));
