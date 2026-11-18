@@ -257,31 +257,41 @@
     window.location.href = '/api/file?cut=' + curCut(M) + '&doc=' + doc;
   }
   const RMN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
-  const confirmBox = document.getElementById('new-confirm'), confirmText = document.getElementById('new-confirm-text');
+  const dlg = document.getElementById('new-modal'), goBtn = document.getElementById('new-go'), cancelBtn = document.getElementById('new-cancel');
   let pendingNew = null;
+  function modal(title, text, note, canGo) {
+    if (!dlg) { say(text); return; }
+    document.getElementById('new-modal-title').textContent = title; document.getElementById('new-modal-text').textContent = text;
+    const n = document.getElementById('new-modal-note'); n.textContent = note || ''; n.hidden = !note;
+    goBtn.hidden = !canGo; cancelBtn.textContent = canGo ? 'Отмена' : 'Понятно';
+    if (!dlg.open) dlg.showModal(); (canGo ? goBtn : cancelBtn).focus();
+  }
   async function post(cut, docs, isNew) {
     say('Запускаю пересборку…');
     try {
       const r = await fetch('/api/refresh', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cut, docs, new: !!isNew})});
       const j = await r.json(); if (!r.ok) throw new Error(j.error || 'ошибка сервера');
       say(isNew ? 'Собираю срез на ' + ru(cut) + ', обычно это меньше минуты.' : 'Пересборка запущена, обычно это меньше минуты.'); if (window.pultPoll) window.pultPoll();
-    } catch (err) { say(err.message); }
+    } catch (err) { say(''); if (isNew) modal('Срез не собран', err.message, 'Ничего не запускалось.', false); else say(err.message); }
   }
   function refresh(doc) {
     const M = rowsOf('metrics'); if (!M) return;
-    if (doc !== 'new') { if (confirmBox) confirmBox.hidden = true; return post(curCut(M), doc, false); }
+    if (doc !== 'new') return post(curCut(M), doc, false);
     const cs = cutsOf(M), l = cs[cs.length - 1], ny = +l.slice(0, 4) + (l.slice(5, 7) === '12' ? 1 : 0), nm = l.slice(5, 7) === '12' ? 1 : +l.slice(5, 7) + 1;
     const next = new Date(Date.UTC(ny, nm, 0)).toISOString().slice(0, 10), today = new Date().toISOString().slice(0, 10);
-    if (cs.includes(next)) return say('Срез на ' + ru(next) + ' уже собран. Чтобы пересчитать его, выберите срез и нажмите «Обновить всё».');
-    if (next >= today) return say('Последний срез — ' + ru(l) + '. Следующий, на ' + ru(next) + ', можно собрать только после окончания месяца, с ' + ru(new Date(Date.UTC(ny, nm, 1)).toISOString().slice(0, 10)) + '.');
+    const from = ru(new Date(Date.UTC(ny, nm, 1)).toISOString().slice(0, 10)), mon = RMN[nm - 1] + ' ' + ny;
+    pendingNew = null; say('');
+    if (cs.includes(next)) return modal('Срез за ' + mon + ' уже собран', 'Срез на ' + ru(next) + ' уже есть. Чтобы пересчитать его, выберите этот срез в списке и нажмите «Обновить всё».', 'Ничего не запускалось.', false);
+    if (next >= today) return modal('Новый месяц пока собрать нельзя', 'Последний срез — ' + ru(l) + '. Следующий срез, за ' + mon + ' (на ' + ru(next) + '), можно собрать только после окончания месяца — с ' + from + '.', 'Ничего не запускалось, данные не менялись.', false);
     const days = Math.round((Date.parse(today) - Date.parse(next)) / 864e5);
     pendingNew = next;
-    if (confirmText) confirmText.textContent = 'Будет собран новый срез: ' + RMN[nm - 1] + ' ' + ny + ' (на ' + ru(next) + '), все документы. ' +
-      (days < 21 ? 'Месяц закончился ' + days + ' дн. назад: часть закрытых подписок ещё могут вернуть в работу, поэтому отток может оказаться завышен. Срез можно будет пересчитать позже кнопкой «Обновить всё».' : '');
-    if (confirmBox) confirmBox.hidden = false; say('');
+    modal('Собрать срез за ' + mon + '?', 'Будет собран новый срез на ' + ru(next) + ': все документы, около минуты.',
+      days < 21 ? 'Месяц закончился ' + days + ' дн. назад: часть закрытых подписок ещё могут вернуть в работу, поэтому отток может оказаться завышен. Срез можно будет пересчитать позже кнопкой «Обновить всё».' : '', true);
   }
-  document.getElementById('new-go')?.addEventListener('click', () => { if (confirmBox) confirmBox.hidden = true; if (pendingNew) post(pendingNew, 'all', true); pendingNew = null; });
-  document.getElementById('new-cancel')?.addEventListener('click', () => { if (confirmBox) confirmBox.hidden = true; pendingNew = null; say(''); });
+  goBtn?.addEventListener('click', () => { const c = pendingNew; pendingNew = null; dlg.close(); if (c) post(c, 'all', true); });
+  cancelBtn?.addEventListener('click', () => { pendingNew = null; dlg.close(); });
+  dlg?.addEventListener('close', () => { pendingNew = null; });
+  dlg?.addEventListener('click', (ev) => { if (ev.target === dlg) dlg.close(); });
   document.querySelectorAll('[data-dl]').forEach((b) => b.addEventListener('click', () => download(b.dataset.dl)));
   document.querySelectorAll('[data-rf]').forEach((b) => b.addEventListener('click', () => refresh(b.dataset.rf)));
   dash.onData(() => {
