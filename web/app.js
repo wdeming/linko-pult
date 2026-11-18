@@ -1,5 +1,5 @@
 (() => {
-  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'cost', 'metrics', 'org', 'calls', 'debts'];
+  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts'];
   // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
   const CH = {
     mrr_end: ['stack', 'm', {row: 'Итого MRR'}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
@@ -9,7 +9,8 @@
     top_share: ['hbar', 'p', {}], top_clients: ['hbar', 'm', {col: 'Итого топ-20'}], revenue_m: ['stack', 'm', {row: 'Всего', col: true}],
     cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['stack', 'm', {col: true}], unit: ['group', 'm', {}],
     staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}], debts: ['group', 'm', {col: true}],
-    cash_prod: ['stack', 'm', {row: 'Поступило всего', col: true}], cash_meth: ['stack', 'm', {row: 'Всего', col: true}], cash_comm: ['stack', 'm', {col: true}]};
+    cash_prod: ['stack', 'm', {row: 'Поступило всего', col: true}], cash_meth: ['stack', 'm', {row: 'Всего', col: true}], cash_comm: ['stack', 'm', {col: true}],
+    exp_cash: ['stack', 'm', {row: 'Всего', col: true}], exp_period: ['stack', 'm', {row: 'Всего', col: true}], exp_flow: ['group', 'm', {col: true}], exp_cat: ['hbar', 'm', {col: true}]};
   const view = {}; let msgText = '';
   const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
   const nfd = (d) => new Intl.NumberFormat('ru-RU', {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -117,15 +118,23 @@
     const linesFor = (x) => { const L = ss.filter((s) => m.has(x + '|' + s)).map((s) => [s, fmt(val(x, s), k), ss.indexOf(s)]);
       if (o.row && ss.length > 1) L.push([o.row, fmt(d3.sum(ss, (s) => val(x, s)), k), null, true]); return L; };
     if (type === 'hbar') {
-      const s0 = ss[0], H = Math.max(110, xs.length * 26 + 12), ml = Math.min(W * 0.46, d3.max(xs, (x) => x.length) * 6.6 + 12), mr = 64;
+      const nS = ss.length, H = Math.max(110, xs.length * (nS > 1 ? 15 * nS + 12 : 26) + 12), ml = Math.min(W * 0.46, d3.max(xs, (x) => x.length) * 6.6 + 12), mr = 64;
       const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H).attr('role', 'img').attr('aria-label', 'Горизонтальные столбцы: ' + xs.slice(0, 4).join(', '));
-      const y = d3.scaleBand().domain(xs).range([4, H - 4]).padding(0.25), x = d3.scaleLinear().domain([0, d3.max(xs, (v) => val(v, s0)) || 1]).range([ml, W - mr]);
+      const y = d3.scaleBand().domain(xs).range([4, H - 4]).padding(nS > 1 ? 0.18 : 0.25), inner = d3.scaleBand().domain(ss).range([0, y.bandwidth()]).padding(0.08);
+      const x = d3.scaleLinear().domain([0, d3.max(xs, (v) => d3.max(ss, (s) => val(v, s))) || 1]).range([ml, W - mr]);
       const g = svg.selectAll('g').data(xs).join('g');
       g.append('text').attr('class', 'pl-axl').attr('x', ml - 6).attr('y', (d) => y(d) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.length > ml / 6.6 ? d.slice(0, Math.floor(ml / 6.6) - 1) + '…' : d);
-      g.append('rect').attr('x', ml).attr('y', (d) => y(d)).attr('height', y.bandwidth()).attr('width', (d) => Math.max(1, x(val(d, s0)) - ml)).attr('rx', 2).style('fill', color(0));
-      g.append('text').attr('class', 'pl-axl').attr('x', (d) => x(val(d, s0)) + 5).attr('y', (d) => y(d) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => fmt(val(d, s0), k));
+      g.each(function (d) {
+        const gg = d3.select(this);
+        ss.forEach((s, i) => {
+          if (!m.has(d + '|' + s)) return;
+          const yy = nS > 1 ? y(d) + inner(s) : y(d), bh = nS > 1 ? inner.bandwidth() : y.bandwidth(), v = val(d, s);
+          gg.append('rect').attr('x', ml).attr('y', yy).attr('height', bh).attr('width', Math.max(1, x(Math.max(0, v)) - ml)).attr('rx', 2).style('fill', color(i));
+          gg.append('text').attr('class', 'pl-axl').attr('x', x(Math.max(0, v)) + 5).attr('y', yy + bh / 2).attr('dy', '0.35em').text(fmt(v, k));
+        });
+      });
       g.append('rect').attr('x', 0).attr('width', W).attr('y', (d) => y(d) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent').attr('class', 'pl-hit')
-        .on('pointerenter pointermove', (ev, d) => { svg.selectAll('.pl-hit').classed('on', (z) => z === d); showTip(ev, d, [[s0, fmt(val(d, s0), k), 0]]); })
+        .on('pointerenter pointermove', (ev, d) => { svg.selectAll('.pl-hit').classed('on', (z) => z === d); showTip(ev, d, ss.filter((s) => m.has(d + '|' + s)).map((s) => [s, fmt(val(d, s), k), ss.indexOf(s)])); })
         .on('pointerleave', () => { svg.selectAll('.pl-hit').classed('on', false); hide(); });
       e.append(svg.node(), tip); return;
     }

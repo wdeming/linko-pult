@@ -10,7 +10,7 @@ PP, F = 'POS', 'SFA'
 DOCS = {'mrr': 'MRR_и_когортное_удержание_2026_на_%s.xlsx', 'churn': 'Отток_подписок_причины_%s_2026_на_%s.xlsx', 'clients': 'Клиентская_база_продукты_сегменты_на_%s.xlsx',
         'multi': 'Клиенты_с_несколькими_подписками_на_%s.xlsx', 'top20': 'Концентрация_выручки_и_условия_топ20_на_%s.xlsx', 'cost': 'Себестоимость_поддержки_внедрения_инфраструктуры_на_%s.xlsx',
         'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx',
-        'cash': 'Поступления_денег_%s_2026_на_%s.xlsx'}
+        'cash': 'Поступления_денег_%s_2026_на_%s.xlsx', 'exp': 'Расходы_кэшфло_и_за_период_%s_2026_на_%s.xlsx'}
 MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx', 'debts': 'Все_долги_на_%s_ЧЕРНОВИК.xlsx'}
 metrics, series = [], []
 def revenue(cut, ddmm, per):
@@ -161,6 +161,30 @@ for cut in cuts:
             for pr in prods: ser('cash_prod', ml(mm), pr, PCS.get((mm, pr), 0))
             for me in CS['METH']: ser('cash_meth', ml(mm), me, MCS.get((mm, me), 0))
             ser('cash_comm', ml(mm), 'Комиссии', CS['C'].get(mm, 0))
+    # --- расходы: по дате оплаты и за период
+    ep = os.path.join(dn, 'x_%s_res_exp.json' % t)
+    if os.path.exists(ep):
+        EX = json.load(open(ep, encoding='utf-8')); A3 = lambda D: {tuple(k3.split('|')): v for k3, v in D.items()}
+        CA, PE = A3(EX['CA']), A3(EX['PE']); cm = EX['CMP'].get(m, {})
+        add('exp', 'exp_cash', 'Расходы за месяц по дате оплаты', cm.get('ca'), 'm', 'down')
+        add('exp', 'exp_period', 'Расходы за месяц за период', cm.get('pe'), 'm', 'down')
+        add('exp', 'exp_late', 'Из расходов за период оплачено позже', cm.get('late'), 'm', '')
+        add('exp', 'exp_prepaid', 'Оплачено авансом за следующие месяцы', EX['PREPAID'], 'm', '')
+        if cm: add('exp', 'flow_net', 'Чистый денежный поток за месяц', cm['in'] - cm['com'] - cm['ca'], 'm', 'up')
+        for mm in sorted(EX['CMP']):
+            for pl in EX['PLANS']:
+                ser('exp_cash', ml(mm), pl, sum(v for (a, b, _), v in CA.items() if a == mm and b == pl))
+                ser('exp_period', ml(mm), pl, sum(v for (a, b, _), v in PE.items() if a == mm and b == pl))
+            c2 = EX['CMP'][mm]
+            ser('exp_flow', ml(mm), 'Поступило за вычетом комиссий', c2['in'] - c2['com']); ser('exp_flow', ml(mm), 'Расходы по дате оплаты', c2['ca'])
+            ser('exp_flow', ml(mm), 'Чистый денежный поток', c2['in'] - c2['com'] - c2['ca'])
+        cats = collections.defaultdict(lambda: [0.0, 0.0])
+        for (a, _, c3), v in CA.items():
+            if a == m: cats[c3][0] += v
+        for (a, _, c3), v in PE.items():
+            if a == m: cats[c3][1] += v
+        for c3, (va, vb) in sorted(cats.items(), key=lambda z: -max(z[1])):
+            if abs(va) + abs(vb) >= 1: ser('exp_cat', c3[:40], 'По дате оплаты', va); ser('exp_cat', c3[:40], 'За период', vb)
     # --- оргструктура
     add('org', 'staff', 'Штат, человек', sum(x['n'] for x in fot), 'n', ''); add('org', 'payroll', 'Оклады на руки в месяц', sum(x['sal'] for x in fot), 'm', 'down')
     add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tmj, 'p', 'down')

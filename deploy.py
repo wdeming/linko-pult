@@ -4,7 +4,7 @@ python3 pult_server/deploy.py "что изменено"   — заберёт п�
 import os, sys, hashlib, paramiko
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); R = '/opt/linko-pult'
 MAP = [('pult_server/app.py', 'app.py'), ('pult_server/backup.py', 'backup.py'), ('pult_server/deploy.py', 'deploy.py')] + [('pult_server/web/' + f, 'web/' + f) for f in ('index.html', 'style.css', 'app.js', 'shim.js', 'boot.js')]
-MAP += [(f, 'calc/' + f) for f in ('cfg_cut.py', 'cls.py', 'style_lib.py', 'extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', 'extract_oct31_cash.py', 'gen_oct31_cash.py',
+MAP += [(f, 'calc/' + f) for f in ('cfg_cut.py', 'cls.py', 'style_lib.py', 'extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', 'extract_oct31_cash.py', 'gen_oct31_cash.py', 'extract_oct31_exp.py', 'gen_oct31_exp.py',
         'gen_oct31_clients.py', 'gen_oct31_multi.py', 'gen_oct31_top20.py', 'gen_oct31_cost.py', 'gen_oct31_metrics.py', 'gen_oct31_mrr.py', 'gen_oct31_churn.py', 'gen_oct31_calls.py')]
 MAP += [('pult/' + f, 'calc/pult/' + f) for f in ('refresh.py', 'build_data.py', 'extract_staff.py', 'odoo_db.py', 'today.py')]
 msg = sys.argv[1] if len(sys.argv) > 1 else 'Обновление пульта'
