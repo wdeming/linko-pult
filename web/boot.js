@@ -13,7 +13,7 @@
   }
   function poll() { lastState = 'running'; if (!timer) timer = setInterval(tick, 3000); tick(); }
   window.pultPoll = poll;
-  new MutationObserver(() => dash._run()).observe(document.getElementById('dash-root'), {attributes: true, attributeFilter: ['hidden'], subtree: true});
+  new MutationObserver((ms) => { if (ms.some((m) => m.target.classList && m.target.classList.contains('pl-doc'))) dash._run(); }).observe(document.getElementById('dash-root'), {attributes: true, attributeFilter: ['hidden'], subtree: true});
   let rz = null; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => dash._run(), 150); });
   load().catch((e) => console.error(e));
 })();
