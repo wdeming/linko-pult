@@ -111,3 +111,7 @@ a.pl-btn{text-decoration:none;display:inline-block}
 @media (max-width:900px){.pl-today .pl-hero{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pl-confirm{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:var(--cds-gap-sm);padding:var(--cds-pad-md);border:1px solid var(--color-warn);border-radius:var(--cds-radius);background:var(--color-panel)}
 .pl-confirm-text{margin:0;max-width:80ch;font-size:var(--cds-font-size-body)}
+.pl-today .pl-hero{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:700px){.pl-today .pl-hero{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pl-tile.pl-up .pl-tv{color:var(--color-ok)}
+.pl-tile.pl-down .pl-tv{color:var(--color-bad)}

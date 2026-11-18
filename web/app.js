@@ -196,6 +196,7 @@
     const d = g.data; const at = d.fetched_at ? new Date(d.fetched_at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
     e.textContent = 'На ' + dayRu(d.today) + ' ' + d.today.slice(0, 4) + '. Движения, деньги и счета — с 1 ' + RMG[+d.today.slice(5, 7) - 1] + '. Данные получены ' + at + '.' + (d.error ? ' ' + d.error : '');
   });
+  const netTile = (t, v) => { if (v > 0) t.classList.add('good', 'pl-up'); else if (v < 0) t.classList.add('bad', 'pl-down'); return t; };
   dash.draw('today-tiles', (e) => {
     const g = dash.data('today'); if (g.status !== 'ok' || !g.data.mrr) { e.replaceChildren(); return; }
     const d = g.data, P = ['SFA', 'POS'], s = (o) => P.reduce((a, p) => a + (o && o[p] || 0), 0);
@@ -209,10 +210,8 @@
       ttile('MRR', d.mrr.SFA, 'm', Object.assign(ch(d.mrr.SFA, d.mrr_prev.SFA), {text: pe}), 'm', null, 'up', 'SFA'),
       ttile('MRR', d.mrr.POS, 'm', Object.assign(ch(d.mrr.POS, d.mrr_prev.POS), {text: pe}), 'm', null, 'up', 'POS'),
       ttile('Подписок в базе', subsNow, 'n', d.last_subs != null ? Object.assign(ch(subsNow, d.last_subs), {text: lc}) : null, 'n', 'SFA ' + d.subs.SFA + ' · POS ' + d.subs.POS, 'up'),
-      ttile('Клиентов', d.clients, 'n', d.last_clients != null ? Object.assign(ch(d.clients, d.last_clients), {text: lc}) : null, 'n', null, 'up'),
-      ttile('Изменение MRR с 1-го числа', sgn(net, 'm'), 'm', null, 'm', 'новые ' + sgn(mv('0_creation'), 'm') + ' · расширения ' + sgn(mv('1_expansion'), 'm') + ' · сокращения ' + sgn(mv('15_contraction'), 'm') + ' · отток ' + sgn(mv('2_churn'), 'm'), 'up'),
-      ttile('Поступило денег с 1-го числа', d.cash_in, 'm', Object.assign(ch(d.cash_in, d.cash_in_prev), {text: 'к ' + ps}), 'm', 'комиссии Payme / Click / Paynet ' + fmt(d.cash_comm, 'm'), 'up'),
-      ttile('Выставлено счетов с 1-го числа', d.inv, 'm', Object.assign(ch(d.inv, d.inv_prev), {text: 'к ' + ps}), 'm', null, 'up'));
+      netTile(ttile('Изменение MRR с 1-го числа', sgn(net, 'm'), 'm', null, 'm', 'новые ' + sgn(mv('0_creation'), 'm') + ' · расширения ' + sgn(mv('1_expansion'), 'm') + ' · сокращения ' + sgn(mv('15_contraction'), 'm') + ' · отток ' + sgn(mv('2_churn'), 'm'), 'up'), net),
+      ttile('Поступило денег с 1-го числа', d.cash_in, 'm', Object.assign(ch(d.cash_in, d.cash_in_prev), {text: 'к ' + ps}), 'm', 'комиссии Payme / Click / Paynet ' + fmt(d.cash_comm, 'm'), 'up'));
   });
 
   const one = (name, key, f) => dash.draw(name, (e) => { const M = rowsOf('metrics'); if (!M) return dash0(e); const r = M.find((x) => x.cut === curCut(M) && x.key === key); e.textContent = r ? f(r) : '—'; });
