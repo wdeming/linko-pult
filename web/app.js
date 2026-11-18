@@ -194,7 +194,7 @@
   dash.draw('today-sub', (e) => {
     const g = dash.data('today'); if (g.status !== 'ok') { e.textContent = g.status === 'error' ? (g.message || 'Не удалось получить данные') : 'Загружаю данные из Odoo…'; return; }
     const d = g.data; const at = d.fetched_at ? new Date(d.fetched_at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
-    e.textContent = 'На ' + dayRu(d.today) + ' ' + d.today.slice(0, 4) + '. Движения, деньги и счета — с 1 ' + RMG[+d.today.slice(5, 7) - 1] + '. Данные получены ' + at + '.' + (d.error ? ' ' + d.error : '');
+    e.textContent = 'На ' + dayRu(d.today) + ' ' + d.today.slice(0, 4) + '. Изменение MRR и поступления — с 1 ' + RMG[+d.today.slice(5, 7) - 1] + '. Данные получены ' + at + '.' + (d.error ? ' ' + d.error : '');
   });
   const netTile = (t, v) => { if (v > 0) t.classList.add('good', 'pl-up'); else if (v < 0) t.classList.add('bad', 'pl-down'); return t; };
   dash.draw('today-tiles', (e) => {
