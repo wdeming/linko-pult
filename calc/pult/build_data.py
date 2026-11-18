@@ -51,7 +51,7 @@ for cut in cuts:
     add('mrr', 'subs', 'Подписок в базе', len(base), 'n', 'up'); add('mrr', 'subs_sfa', 'Подписок SFA', R['SRV'][F], 'n', 'up', F); add('mrr', 'subs_pos', 'Подписок POS', R['SRV'][PP], 'n', 'up', PP)
     # потоки MRR: всего, SFA, POS
     for key, lab, e, sign, good in (('new', 'Новые продажи за месяц', '0_creation', 1, 'up'), ('exp', 'Расширения за месяц', '1_expansion', 1, 'up'),
-                                    ('con', 'Сжатия за месяц', '15_contraction', -1, 'down'), ('chu', 'Отток за месяц', '2_churn', -1, 'down')):
+                                    ('con', 'Сокращения за месяц', '15_contraction', -1, 'down'), ('chu', 'Отток за месяц', '2_churn', -1, 'down')):
         add('mrr', key + '_total', lab + ', всего', sign * (mov(e, F) + mov(e, PP)), 'm', good)
         for p in (F, PP): add('mrr', key + '_' + p, '%s, %s' % (lab, p), sign * mov(e, p), 'm', good, p)
     st = {p: M['GN']['%s|%s' % (p, m)]['start'] for p in (F, PP)}; S0 = st[F] + st[PP]
@@ -63,7 +63,7 @@ for cut in cuts:
     for p in (F, PP):
         for x in R['series'][p]:
             ser('mrr_end', ml(x['m']), p, x['end'])
-            for k, nm in (('new', 'Новые'), ('exp', 'Расширения'), ('con', 'Сжатия'), ('chu', 'Отток')): ser('flow_' + p, ml(x['m']), nm, x[k])
+            for k, nm in (('new', 'Новые'), ('exp', 'Расширения'), ('con', 'Сокращения'), ('chu', 'Отток')): ser('flow_' + p, ml(x['m']), nm, x[k])
         for k, g in M['GN'].items():
             if k.startswith(p + '|'): ser('retention', ml(k.split('|')[1]), 'GRR ' + p, g['grr']); ser('retention', ml(k.split('|')[1]), 'NRR ' + p, g['nrr'])
         for a in surv[p]: ser('survival', '%d мес' % a[0], p, a[3])
