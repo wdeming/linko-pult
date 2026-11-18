@@ -6,7 +6,7 @@
     retention: ['line', 'p', {}], survival: ['line', 'p', {}],
     churn_closed: ['stack', 'n', {row: 'Всего', col: true}], churn_new: ['stack', 'n', {row: 'Всего', col: true}], churn_pct: ['line', 'p', {}],
     churn_cats: ['hbar', 'p', {col: true}], seg_clients: ['hbar', 'n', {col: true}], seg_mrr: ['hbar', 'm', {col: true}], multi_top: ['hbar', 'm', {col: 'Итого по показанным'}],
-    top_share: ['hbar', 'p', {}], top_clients: ['hbar', 'm', {col: 'Итого топ-20'}], revenue_m: ['stack', 'm', {row: 'Всего', col: true}], cash_accr: ['group', 'm', {col: true}], fees: ['stack', 'm', {col: true}],
+    top_share: ['hbar', 'p', {}], top_clients: ['hbar', 'm', {col: 'Итого топ-20'}], revenue_m: ['stack', 'm', {row: 'Всего', col: true}],
     cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['stack', 'm', {col: true}], unit: ['group', 'm', {}],
     staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}], debts: ['group', 'm', {col: true}],
     cash_prod: ['stack', 'm', {row: 'Поступило всего', col: true}], cash_meth: ['stack', 'm', {row: 'Всего', col: true}], cash_comm: ['stack', 'm', {col: true}]};
