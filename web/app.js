@@ -118,12 +118,12 @@
     const linesFor = (x) => { const L = ss.filter((s) => m.has(x + '|' + s)).map((s) => [s, fmt(val(x, s), k), ss.indexOf(s)]);
       if (o.row && ss.length > 1) L.push([o.row, fmt(d3.sum(ss, (s) => val(x, s)), k), null, true]); return L; };
     if (type === 'hbar') {
-      const nS = ss.length, H = Math.max(110, xs.length * (nS > 1 ? 15 * nS + 12 : 26) + 12), ml = Math.min(W * 0.46, d3.max(xs, (x) => x.length) * 6.6 + 12), mr = 64;
+      const nS = ss.length, H = Math.max(110, xs.length * (nS > 1 ? 15 * nS + 12 : 26) + 12), ml = Math.min(W * 0.46, d3.max(xs, (x) => x.length) * 7.4 + 14), mr = 80;
       const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H).attr('role', 'img').attr('aria-label', 'Горизонтальные столбцы: ' + xs.slice(0, 4).join(', '));
       const y = d3.scaleBand().domain(xs).range([4, H - 4]).padding(nS > 1 ? 0.18 : 0.25), inner = d3.scaleBand().domain(ss).range([0, y.bandwidth()]).padding(0.08);
       const x = d3.scaleLinear().domain([0, d3.max(xs, (v) => d3.max(ss, (s) => val(v, s))) || 1]).range([ml, W - mr]);
       const g = svg.selectAll('g').data(xs).join('g');
-      g.append('text').attr('class', 'pl-axl').attr('x', ml - 6).attr('y', (d) => y(d) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.length > ml / 6.6 ? d.slice(0, Math.floor(ml / 6.6) - 1) + '…' : d);
+      g.append('text').attr('class', 'pl-axl').attr('x', ml - 6).attr('y', (d) => y(d) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.length > (ml - 8) / 7.4 ? d.slice(0, Math.floor((ml - 8) / 7.4) - 1) + '…' : d);
       g.each(function (d) {
         const gg = d3.select(this);
         ss.forEach((s, i) => {
