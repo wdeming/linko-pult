@@ -26,7 +26,8 @@ def install(app, db, now, cfg, calc):
         """)
     app.register_blueprint(bp)
 def perm():
-    return ((G['cfg'].get('perms') or {}).get(session.get('u') or '', {}) or {}).get('debts', 'edit')
+    p = (G['cfg'].get('perms') or {}).get(session.get('u') or '', {}) or {}
+    return p.get('debts', 'view' if p.get('role') == 'viewer' else 'edit')
 class Bad(Exception): pass
 @bp.errorhandler(Bad)
 def bad(e): return jsonify(error=str(e)), 400

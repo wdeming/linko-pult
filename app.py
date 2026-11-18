@@ -11,6 +11,9 @@ app = Flask(__name__, static_folder=os.path.join(BASE, 'web'), static_url_path='
 app.secret_key = CFG['secret']
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE='Lax', PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30))
 LOCK = threading.Lock()
+def role():
+    """Роль пользователя: admin — всё; viewer — только просмотр (без пересборок, смены среза и ввода данных). data/config.json → perms.<логин>.role"""
+    return ((CFG.get('perms') or {}).get(session.get('u') or '', {}) or {}).get('role', 'admin')
 now = lambda: datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 def db():
     c = sqlite3.connect(DB, timeout=30); c.row_factory = sqlite3.Row; return c
@@ -74,7 +77,11 @@ def logout():
 def healthz(): return 'ok'
 @app.route('/')
 def index():
-    r = send_from_directory(app.static_folder, 'index.html'); r.headers['Cache-Control'] = 'no-store'; return r
+    html = open(os.path.join(app.static_folder, 'index.html'), encoding='utf-8').read()
+    if role() == 'viewer': html = html.replace('<body>', '<body class="pl-ro">', 1)
+    return Response(html, mimetype='text/html', headers={'Cache-Control': 'no-store'})
+@app.route('/api/me')
+def api_me(): return jsonify(user=session.get('u'), role=role())
 @app.after_request
 def nocache(r):
     r.headers.setdefault('Cache-Control', 'no-store'); return r
@@ -93,6 +100,7 @@ def api_file():
     return Response(bytes(f['body']), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="linko_%s_%s.xlsx"; filename*=UTF-8\'\'%s' % (request.args.get('doc', ''), request.args.get('cut', ''), quote(f['name']))})
 @app.route('/api/refresh', methods=['POST'])
 def api_refresh():
+    if role() == 'viewer': return jsonify(error='У вас доступ только на просмотр'), 403
     j = request.get_json(silent=True) or {}; cut = str(j.get('cut', '')); docs = str(j.get('docs', 'all'))
     m = re.fullmatch(r'2026-(0[89]|1[0-2])-(\d\d)', cut)
     if not m or int(m.group(2)) != calendar.monthrange(2026, int(m.group(1)))[1]: return jsonify(error='Срез должен быть концом месяца 2026 года, начиная с августа'), 400
@@ -116,7 +124,7 @@ TLOCK = threading.Lock()
 @app.route('/api/today')
 def api_today():
     import time
-    force = request.args.get('force') == '1'
+    force = request.args.get('force') == '1' and role() != 'viewer'
     with TLOCK:
         if force or not TODAY['data'] or time.time() - TODAY['at'] > 600:
             try:

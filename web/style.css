@@ -152,3 +152,5 @@ a.pl-btn{text-decoration:none;display:inline-block}
 .db-err{color:var(--color-bad);font-size:13px;margin:4px 0 0}
 @media (max-width:640px){.db-nums{grid-template-columns:1fr}.db-facts{grid-template-columns:1fr}.db-lr{grid-template-columns:1fr;gap:2px}}
 .db-tbl td:nth-child(2),.db-tbl th:nth-child(2),.db-ops td:nth-child(2),.db-ops th:nth-child(2),.db-ops th:nth-child(4){text-align:left}
+/* только просмотр */
+.pl-ro [data-rf],.pl-ro #today-refresh,.pl-ro #pl-cut,.pl-ro label[for=pl-cut],.pl-ro #db-new,.pl-ro .db-acts,.pl-ro .db-link,.pl-ro #new-modal{display:none!important}
