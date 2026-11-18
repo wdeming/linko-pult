@@ -9,7 +9,8 @@ cuts = sorted(os.path.basename(d) for d in glob.glob(os.path.join(P, 'work', '20
 PP, F = 'POS', 'SFA'
 DOCS = {'mrr': 'MRR_и_когортное_удержание_2026_на_%s.xlsx', 'churn': 'Отток_подписок_причины_%s_2026_на_%s.xlsx', 'clients': 'Клиентская_база_продукты_сегменты_на_%s.xlsx',
         'multi': 'Клиенты_с_несколькими_подписками_на_%s.xlsx', 'top20': 'Концентрация_выручки_и_условия_топ20_на_%s.xlsx', 'cost': 'Себестоимость_поддержки_внедрения_инфраструктуры_на_%s.xlsx',
-        'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx'}
+        'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx',
+        'cash': 'Поступления_денег_%s_2026_на_%s.xlsx'}
 MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx', 'debts': 'Все_долги_на_%s_ЧЕРНОВИК.xlsx'}
 metrics, series = [], []
 def revenue(cut, ddmm, per):
@@ -140,6 +141,26 @@ for cut in cuts:
     add('calls', 'calls_share', 'Доля проблемных', b.get('Проблема', 0) / n, 'p', 'down'); add('calls', 'calls_cum', 'Записей накопленно', calls['N'], 'n', '')
     for mmm, v in calls['bym'].items():
         for k in ('Всё ок', 'Проблема', 'Не дозвонились'): ser('calls_m', ml(mmm), k, v.get(k, 0))
+    # --- поступления денег
+    cp = os.path.join(dn, 'x_%s_res_cash.json' % t)
+    if os.path.exists(cp):
+        CS = json.load(open(cp, encoding='utf-8')); PCS = collections.defaultdict(float); MCS = collections.defaultdict(float)
+        for k2, v in CS['P'].items(): PCS[tuple(k2.split('|'))] += v
+        for k2, v in CS['M'].items(): MCS[tuple(k2.split('|'))] += v
+        cin = sum(v for (mm, _), v in PCS.items() if mm == m); com = CS['C'].get(m, 0)
+        add('cash', 'cash_in', 'Поступило за месяц, всего', cin, 'm', 'up')
+        add('cash', 'cash_SFA', 'Поступило за месяц, SFA', PCS.get((m, 'SFA'), 0), 'm', 'up', F)
+        add('cash', 'cash_POS', 'Поступило за месяц, POS', PCS.get((m, 'POS'), 0), 'm', 'up', PP)
+        add('cash', 'cash_comm', 'Комиссии Payme / Click / Paynet за месяц', com, 'm', 'down')
+        add('cash', 'cash_net', 'Чистые поступления за месяц', cin - com, 'm', 'up')
+        add('cash', 'cash_comm_pct', 'Комиссия, % от поступлений', com / cin if cin else None, 'p', 'down')
+        add('cash', 'cash_cum', 'Поступило с 01.02 накопленно', sum(PCS.values()), 'm', 'up')
+        months = sorted({mm for mm, _ in PCS})
+        prods = [p for p in CS['PR'] if any(PCS.get((mm, p)) for mm in months)]
+        for mm in months:
+            for pr in prods: ser('cash_prod', ml(mm), pr, PCS.get((mm, pr), 0))
+            for me in CS['METH']: ser('cash_meth', ml(mm), me, MCS.get((mm, me), 0))
+            ser('cash_comm', ml(mm), 'Комиссии', CS['C'].get(mm, 0))
     # --- оргструктура
     add('org', 'staff', 'Штат, человек', sum(x['n'] for x in fot), 'n', ''); add('org', 'payroll', 'Оклады на руки в месяц', sum(x['sal'] for x in fot), 'm', 'down')
     add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tm, 'p', 'down')

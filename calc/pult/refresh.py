@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Пересборка данных пульта.  python3 pult/refresh.py 2026-10-31[,2026-09-30] [all|mrr,churn,clients,multi,top20,cost,metrics,calls,org]
+"""Пересборка данных пульта.  python3 pult/refresh.py 2026-10-31[,2026-09-30] [all|mrr,churn,clients,multi,top20,cost,metrics,calls,org,cash]
 Считает срез(ы) в pult/work/<срез>/ и собирает pult/out/ (metrics.json, series.json, bundle_<срез>.json)."""
 import os, sys, subprocess, json, datetime
 P = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(P)
 cuts = sys.argv[1].split(','); docs = (sys.argv[2] if len(sys.argv) > 2 else 'all').split(',')
-ALL = ['mrr', 'churn', 'clients', 'multi', 'top20', 'cost', 'metrics', 'calls', 'org']
+ALL = ['mrr', 'churn', 'clients', 'multi', 'top20', 'cost', 'metrics', 'calls', 'org', 'cash']
 if 'all' in docs: docs = ALL
 if 'multi' in docs and 'clients' not in docs: docs.append('clients')
 if 'metrics' in docs and 'cost' not in docs: docs.append('cost')
@@ -16,8 +16,8 @@ log = []
 for cut in cuts:
     out = os.path.join(P, 'work', cut); os.makedirs(out, exist_ok=True)
     env = dict(os.environ, LINKO_CUT=cut, LINKO_OUT=out, PYTHONIOENCODING='utf-8')
-    for s in ('extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', os.path.join(P, 'extract_staff.py')): run(s, env)
-    for d in ('clients', 'multi', 'top20', 'cost', 'metrics', 'mrr', 'churn', 'calls'):
+    for s in ('extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', 'extract_oct31_cash.py', os.path.join(P, 'extract_staff.py')): run(s, env)
+    for d in ('clients', 'multi', 'top20', 'cost', 'metrics', 'mrr', 'churn', 'calls', 'cash'):
         if d in docs: run('gen_oct31_%s.py' % d, env)
     st = os.path.join(out, 'stamp.json'); old = json.load(open(st)) if os.path.exists(st) else {}
     now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')

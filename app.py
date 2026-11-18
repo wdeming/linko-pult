@@ -6,7 +6,7 @@ from flask import Flask, request, session, redirect, jsonify, send_from_director
 from werkzeug.security import check_password_hash
 BASE = os.path.dirname(os.path.abspath(__file__)); CALC = os.path.join(BASE, 'calc'); DATA = os.path.join(BASE, 'data'); DB = os.path.join(DATA, 'pult.db')
 CFG = json.load(open(os.path.join(DATA, 'config.json'), encoding='utf-8'))
-DOCS = {'all', 'mrr', 'churn', 'clients', 'multi', 'top20', 'cost', 'metrics', 'calls', 'org'}
+DOCS = {'all', 'mrr', 'churn', 'clients', 'multi', 'top20', 'cost', 'metrics', 'calls', 'org', 'cash'}
 app = Flask(__name__, static_folder=os.path.join(BASE, 'web'), static_url_path='/static')
 app.secret_key = CFG['secret']
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=True, SESSION_COOKIE_SAMESITE='Lax', PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30))
