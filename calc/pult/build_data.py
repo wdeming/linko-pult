@@ -9,22 +9,9 @@ cuts = sorted(os.path.basename(d) for d in glob.glob(os.path.join(P, 'work', '20
 PP, F = 'POS', 'SFA'
 DOCS = {'mrr': 'MRR_и_когортное_удержание_2026_на_%s.xlsx', 'churn': 'Отток_подписок_причины_%s_2026_на_%s.xlsx', 'clients': 'Клиентская_база_продукты_сегменты_на_%s.xlsx',
         'multi': 'Клиенты_с_несколькими_подписками_на_%s.xlsx', 'top20': 'Концентрация_выручки_и_условия_топ20_на_%s.xlsx', 'cost': 'Себестоимость_поддержки_внедрения_инфраструктуры_на_%s.xlsx',
-        'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx'}
-MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx', 'debts': 'Все_долги_на_%s_ЧЕРНОВИК.xlsx'}
+        'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx'}
+MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'debts': 'Все_долги_на_%s_ЧЕРНОВИК.xlsx'}
 metrics, series = [], []
-def revenue(cut, ddmm, per):
-    import openpyxl
-    months = ['2026-%02d' % i for i in range(2, int(cut[5:7]) + 1)]
-    for c2 in sorted([c for c in cuts if c >= cut], reverse=True):   # берём самый свежий файл выручки, где есть нужные месяцы
-        fn = os.path.join(ROOT, MANUAL['revenue'] % ('Фев-' + RM[int(c2[5:7])].capitalize(), '%s.%s' % (c2[8:10], c2[5:7])))
-        if not os.path.exists(fn): continue
-        ws = openpyxl.load_workbook(fn)['Помесячно']; res = {}
-        try:
-            for r in range(4, 8):
-                res[ws.cell(r, 1).value] = {m: float(ws.cell(r, 2 + i).value) for i, m in enumerate(months)}
-            return res
-        except (TypeError, ValueError): continue
-    return None
 def debts(ddmm):
     fn = os.path.join(ROOT, MANUAL['debts'] % ddmm)
     if not os.path.exists(fn): return None
@@ -145,12 +132,25 @@ for cut in cuts:
     add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tm, 'p', 'down')
     for x in fot: ser('staff_dep', (x['dep'] or '—')[:30], 'Человек', x['n']); ser('payroll_dep', (x['dep'] or '—')[:30], 'Оклады', x['sal'])
     # --- выручка и долги (из файлов комплекта, обновляются вручную)
-    rv = revenue(cut, ddmm, per)
-    if rv:
-        tot = sum(v[m] for v in rv.values()); add('revenue', 'rev_total', 'Выручка за месяц', tot, 'm', 'up')
-        for k, v in rv.items():
-            add('revenue', 'rev_' + str(list(rv).index(k)), k, v[m], 'm', 'up')
-            for mmm, val in v.items(): ser('revenue_m', ml(mmm), k, val)
+    # --- выручка по дате поступления денег (кэшфло)
+    if os.path.exists(os.path.join(dn, 'x_%s_revcash.json' % t)):
+        V = L('revcash'); TT = (('SFA', 'Подписка SFA'), ('POS', 'Подписка POS'), ('EDU', 'Обучение'), ('OTH', 'Прочее'), ('UN', 'Без привязки к счёту'))
+        CAT = {25: 'SFA', 26: 'SFA', 41: 'SFA', 42: 'SFA', 24: 'POS', 40: 'POS', 32: 'POS', 43: 'POS', 30: 'EDU', 37: 'EDU', 33: 'EDU'}
+        mon = sorted({k.split('|')[0] for k in V['cin']})
+        R2 = collections.defaultdict(float)
+        for k, v in V['bypid'].items():
+            mm, p = k.split('|'); R2[(CAT.get(None if p == 'None' else int(p), 'OTH'), mm)] += v[0]
+        for k, v in V['unapplied'].items(): R2[('UN', k.split('|')[0])] += v[0]
+        cin = V['cin'].get(m, [0])[0]; out = V['out'].get(m, 0.0); acc = V['accr'].get(m, 0.0)
+        add('revenue', 'rev_total', 'Поступило от клиентов за месяц', cin, 'm', 'up')
+        add('revenue', 'rev_net', 'Как в кэшфло Odoo (за вычетом комиссий)', cin + out, 'm', 'up')
+        add('revenue', 'rev_fee', 'Комиссии платёжных систем', -out, 'm', 'down')
+        add('revenue', 'rev_accr', 'Выставлено счетов за месяц', acc, 'm', 'up')
+        for i, (k, nm) in enumerate(TT): add('revenue', 'rev_' + k, nm, R2[(k, m)], 'm', 'down' if k == 'UN' else 'up')
+        for mm in mon:
+            for k, nm in TT: ser('revenue_m', ml(mm), nm, R2[(k, mm)])
+            ser('cash_accr', ml(mm), 'Поступило', V['cin'][mm][0]); ser('cash_accr', ml(mm), 'Выставлено счетов', V['accr'].get(mm, 0.0))
+            ser('fees', ml(mm), 'Комиссии', -V['out'].get(mm, 0.0))
     db = debts(ddmm)
     if db:
         add('debts', 'debt_total', 'Операционные долги (расчётно)', sum(c - d for _, c, d in db), 'm', 'down'); add('debts', 'debt_paid', 'Оплачено за два месяца', sum(d for _, c, d in db), 'm', 'up')
