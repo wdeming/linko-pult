@@ -90,7 +90,7 @@ def api_status(): return jsonify(status=last_run())
 def api_file():
     with db() as c: f = c.execute('select name, body from file where cut=? and doc=?', (request.args.get('cut', ''), request.args.get('doc', ''))).fetchone()
     if not f: return 'Файл для этого среза не собран', 404
-    return Response(bytes(f['body']), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': "attachment; filename*=UTF-8''" + quote(f['name'])})
+    return Response(bytes(f['body']), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="linko_%s_%s.xlsx"; filename*=UTF-8\'\'%s' % (request.args.get('doc', ''), request.args.get('cut', ''), quote(f['name']))})
 @app.route('/api/refresh', methods=['POST'])
 def api_refresh():
     j = request.get_json(silent=True) or {}; cut = str(j.get('cut', '')); docs = str(j.get('docs', 'all'))
