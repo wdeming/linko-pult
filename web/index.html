@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+<title>Пульт Linko</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><div id="dash-root">
+<div class="pl">
+<header class="pl-top" id="top"><div class="pl-brand"><h1 class="pl-title">Пульт Linko</h1><p class="pl-sub">Срез на <b data-draw="cutlabel">—</b>. MRR <b data-draw="h-mrr" data-source="metrics">—</b>, изменение к прошлому срезу <b data-draw="h-chg" data-source="metrics">—</b>. SFA <b data-draw="h-sfa" data-source="metrics">—</b>, POS <b data-draw="h-pos" data-source="metrics">—</b>.</p></div><div class="pl-ctl"><label class="pl-lab" for="pl-cut">Срез</label><select id="pl-cut" class="dash-select" data-draw="cutsel" aria-label="Срез" data-source="metrics"></select><button type="button" class="pl-btn pl-main" data-rf="all" id="refresh-all">Обновить всё</button><button type="button" class="pl-btn" data-rf="new" id="refresh-new">Собрать новый месяц</button><a class="pl-btn" href="/logout">Выйти</a></div></header>
+<p class="pl-status" id="status"><span class="pl-lamp" data-draw="lamp"></span><span data-draw="status" data-source="status">—</span> <span class="pl-msg" data-draw="msg"></span></p>
+<section class="pl-hero" id="hero" data-draw="hero" data-source="metrics" aria-label="Главные показатели"></section>
+<nav class="pl-tabs" id="tabs" aria-label="Документы комплекта"><button type="button" class="pl-tab" data-tab="mrr">MRR и удержание</button><button type="button" class="pl-tab" data-tab="churn">Отток</button><button type="button" class="pl-tab" data-tab="clients">Клиенты</button><button type="button" class="pl-tab" data-tab="multi">Мультиподписки</button><button type="button" class="pl-tab" data-tab="top20">Концентрация</button><button type="button" class="pl-tab" data-tab="revenue">Выручка</button><button type="button" class="pl-tab" data-tab="cost">Себестоимость</button><button type="button" class="pl-tab" data-tab="metrics">Юнит-экономика</button><button type="button" class="pl-tab" data-tab="org">Штат</button><button type="button" class="pl-tab" data-tab="calls">Обзвоны</button><button type="button" class="pl-tab" data-tab="debts">Долги</button></nav>
+<section class="pl-doc" id="mrr" data-doc="mrr">
+<div class="pl-dochead"><h2 class="pl-h2">MRR и когортное удержание</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="mrr">Скачать Excel</button><button type="button" class="pl-btn" data-rf="mrr">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-mrr" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-mrr" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-mrr_end"><figcaption class="pl-cap">MRR на конец месяца по продуктам</figcaption><div class="pl-viz" data-draw="viz-mrr_end" data-source="series"></div></figure><figure class="pl-fig" id="fig-flow_SFA"><figcaption class="pl-cap">Движение MRR SFA по месяцам</figcaption><div class="pl-viz" data-draw="viz-flow_SFA" data-source="series"></div></figure><figure class="pl-fig" id="fig-flow_POS"><figcaption class="pl-cap">Движение MRR POS по месяцам</figcaption><div class="pl-viz" data-draw="viz-flow_POS" data-source="series"></div></figure><figure class="pl-fig" id="fig-retention"><figcaption class="pl-cap">GRR и NRR по месяцам</figcaption><div class="pl-viz" data-draw="viz-retention" data-source="series"></div></figure><figure class="pl-fig" id="fig-survival"><figcaption class="pl-cap">Выживаемость подписок новых когорт</figcaption><div class="pl-viz" data-draw="viz-survival" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="churn" data-doc="churn" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Отток подписок: причины и сегменты</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="churn">Скачать Excel</button><button type="button" class="pl-btn" data-rf="churn">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-churn" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-churn" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-churn_n"><figcaption class="pl-cap">Закрытые и новые подписки по месяцам</figcaption><div class="pl-viz" data-draw="viz-churn_n" data-source="series"></div></figure><figure class="pl-fig" id="fig-churn_pct"><figcaption class="pl-cap">Отток MRR, % от базы на начало месяца</figcaption><div class="pl-viz" data-draw="viz-churn_pct" data-source="series"></div></figure><figure class="pl-fig" id="fig-churn_cats"><figcaption class="pl-cap">Категории причин в потерянном MRR</figcaption><div class="pl-viz" data-draw="viz-churn_cats" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="clients" data-doc="clients" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Клиентская база: продукты и сегменты</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="clients">Скачать Excel</button><button type="button" class="pl-btn" data-rf="clients">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-clients" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-clients" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-seg_clients"><figcaption class="pl-cap">Клиенты по сегментам</figcaption><div class="pl-viz" data-draw="viz-seg_clients" data-source="series"></div></figure><figure class="pl-fig" id="fig-seg_mrr"><figcaption class="pl-cap">MRR по сегментам</figcaption><div class="pl-viz" data-draw="viz-seg_mrr" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="multi" data-doc="multi" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Клиенты с несколькими подписками</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="multi">Скачать Excel</button><button type="button" class="pl-btn" data-rf="multi">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-multi" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-multi" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-multi_top"><figcaption class="pl-cap">Крупнейшие клиенты с несколькими подписками</figcaption><div class="pl-viz" data-draw="viz-multi_top" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="top20" data-doc="top20" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Концентрация выручки и топ-20</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="top20">Скачать Excel</button><button type="button" class="pl-btn" data-rf="top20">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-top20" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-top20" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-top_share"><figcaption class="pl-cap">Доля крупнейших клиентов в MRR</figcaption><div class="pl-viz" data-draw="viz-top_share" data-source="series"></div></figure><figure class="pl-fig" id="fig-top_clients"><figcaption class="pl-cap">Топ-20 клиентов по MRR</figcaption><div class="pl-viz" data-draw="viz-top_clients" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="revenue" data-doc="revenue" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Выручка по продуктам и типам</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="revenue">Скачать Excel</button><span class="pl-manual">данные из файла комплекта</span></div></div>
+<p class="pl-file" data-draw="file-revenue" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-revenue" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-revenue_m"><figcaption class="pl-cap">Выручка по месяцам и типам</figcaption><div class="pl-viz" data-draw="viz-revenue_m" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="cost" data-doc="cost" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Себестоимость поддержки, внедрения и инфраструктуры</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="cost">Скачать Excel</button><button type="button" class="pl-btn" data-rf="cost">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-cost" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-cost" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-cost_parts"><figcaption class="pl-cap">Состав себестоимости</figcaption><div class="pl-viz" data-draw="viz-cost_parts" data-source="series"></div></figure><figure class="pl-fig" id="fig-hosting"><figcaption class="pl-cap">Оплаты хостинга по месяцам</figcaption><div class="pl-viz" data-draw="viz-hosting" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="metrics" data-doc="metrics" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Ключевые метрики SaaS</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="metrics">Скачать Excel</button><button type="button" class="pl-btn" data-rf="metrics">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-metrics" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-metrics" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-unit"><figcaption class="pl-cap">LTV и CAC по продуктам</figcaption><div class="pl-viz" data-draw="viz-unit" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="org" data-doc="org" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Оргструктура и фонд окладов</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="org">Скачать Excel</button><button type="button" class="pl-btn" data-rf="org">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-org" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-org" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-staff_dep"><figcaption class="pl-cap">Численность по отделам</figcaption><div class="pl-viz" data-draw="viz-staff_dep" data-source="series"></div></figure><figure class="pl-fig" id="fig-payroll_dep"><figcaption class="pl-cap">Оклады по отделам</figcaption><div class="pl-viz" data-draw="viz-payroll_dep" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="calls" data-doc="calls" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Обзвоны клиентов</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="calls">Скачать Excel</button><button type="button" class="pl-btn" data-rf="calls">Обновить</button></div></div>
+<p class="pl-file" data-draw="file-calls" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-calls" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-calls_m"><figcaption class="pl-cap">Звонки по месяцам и результатам</figcaption><div class="pl-viz" data-draw="viz-calls_m" data-source="series"></div></figure></div>
+</section>
+<section class="pl-doc" id="debts" data-doc="debts" hidden>
+<div class="pl-dochead"><h2 class="pl-h2">Все долги</h2><div class="pl-actions"><span class="pl-seg" role="group" aria-label="Вид"><button type="button" class="pl-segb" data-view="chart" aria-pressed="true">Графики</button><button type="button" class="pl-segb" data-view="table" aria-pressed="false">Таблицы</button></span><button type="button" class="pl-btn" data-dl="debts">Скачать Excel</button><span class="pl-manual">данные из файла комплекта</span></div></div>
+<p class="pl-file" data-draw="file-debts" data-source="metrics">—</p>
+<div class="pl-kpis" data-draw="kpi-debts" data-source="metrics"></div>
+<div class="pl-charts"><figure class="pl-fig" id="fig-debts"><figcaption class="pl-cap">Долги: было на 31.08 и расчётный остаток</figcaption><div class="pl-viz" data-draw="viz-debts" data-source="series"></div></figure></div>
+</section>
+<details class="pl-about" id="about"><summary>Как читать пульт</summary><p>Зелёным отмечено изменение в лучшую сторону к предыдущему срезу, красным — в худшую, серым — нейтральное. Голубая метка — POS, зелёная — SFA. Срез месяца надёжен примерно через три недели после его конца: при возврате закрытой подписки Odoo убирает событие оттока из журнала, поэтому ранний пересчёт завышает отток. Выручка и долги пока берутся из файлов комплекта и кнопкой не пересчитываются. Сумма «млн» — миллионы сум.</p></details>
+</div>
+</div>
+<script src="/static/d3.min.js"></script><script src="/static/shim.js"></script><script src="/static/app.js"></script><script src="/static/boot.js"></script>
+</body></html>

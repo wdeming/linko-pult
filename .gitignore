@@ -1,0 +1,8 @@
+data/
+calc/pult/work/
+calc/pult/out/
+calc/pult/access.json
+calc/pult/linko_ro_key
+__pycache__/
+*.xlsx
+web/d3.min.js
