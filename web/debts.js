@@ -3,8 +3,8 @@
   const root = document.getElementById('debts'); if (!root) return;
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0}), nf2 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
-  const money = (a, cur) => cur === 'USD' ? '$' + nf2.format(a) : nf0.format(a) + ' сум';
+  const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0}), nf2 = new Intl.NumberFormat('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const money = (a, cur) => cur === 'USD' ? '$' + (Math.abs(a - Math.round(a)) < 0.005 ? nf0 : nf2).format(a) : nf0.format(a) + ' сум';
   const ru = (d) => d ? d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : '—';
   const when = (t) => t ? new Date(t).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
   const ST = {open: ['Открыт', ''], overdue: ['Просрочен', 'bad'], closed: ['Погашен', 'ok'], void: ['Аннулирован', 'void']};
@@ -33,7 +33,7 @@
     const takenM = live.reduce((a, d) => a + d.ops.filter((o) => !o.void && o.op === 'take' && o.date.slice(0, 7) === m).reduce((x, o) => x + o.amount * (d.currency === 'USD' ? S.rate : 1), 0), 0);
     const od = live.filter((d) => d.status === 'overdue'), open = live.filter((d) => d.status !== 'closed');
     $('db-tiles').replaceChildren(
-      tileBox('Всего должны сейчас', money(left, 'UZS'), usd ? 'в т.ч. $' + nf2.format(usd) + ' по 12 000' : 'открытых долгов: ' + open.length, left > 0 ? 'bad' : 'good'),
+      tileBox('Всего должны сейчас', money(left, 'UZS'), usd ? 'в т.ч. ' + money(usd, 'USD') + ' по 12 000' : 'открытых долгов: ' + open.length, left > 0 ? 'bad' : 'good'),
       tileBox('Было взято всего', money(live.reduce((a, d) => a + d.taken_uzs, 0), 'UZS'), 'с учётом добавленного к долгам'),
       tileBox('Вернули всего', money(live.reduce((a, d) => a + d.paid_uzs, 0), 'UZS'), 'погашено долгов: ' + live.filter((d) => d.status === 'closed').length),
       tileBox('Вернули в этом месяце', money(paidM, 'UZS'), takenM ? 'и взяли/добавили ' + money(takenM, 'UZS') : 'новых долгов в этом месяце нет'),

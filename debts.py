@@ -59,8 +59,9 @@ def amt(j, cur):
     if a > 1e13: raise Bad('Слишком большая сумма')
     return a
 def money(a, cur):
-    s = '{:,.2f}'.format(a).rstrip('0').rstrip('.') if cur == 'USD' else '{:,.0f}'.format(a)
-    s = s.replace(',', ' ')
+    s = '{:,.2f}'.format(a) if cur == 'USD' else '{:,.0f}'.format(a)
+    if s.endswith('.00'): s = s[:-3]
+    s = s.replace(',', ' ').replace('.', ',')
     return '$' + s if cur == 'USD' else s + ' сум'
 ru = lambda d: d[8:10] + '.' + d[5:7] + '.' + d[:4] if d else '—'
 def log(c, debt_id, op_id, action, detail):
@@ -150,7 +151,7 @@ def api_op(i):
             lf = left_of(c, i)
             if a > lf + 0.004: raise Bad('Выплата больше остатка долга: осталось %s' % money(lf, d['currency']))
         o = c.execute('insert into debt_op(debt_id, op, date, amount, note, created_at, created_by) values(?,?,?,?,?,?,?)', (i, op, date, a, note, G['now'](), session.get('u'))).lastrowid
-        log(c, i, o, op, '%s по долгу «%s»: %s от %s%s' % ('Выплата' if op == 'pay' else 'Добавлено к долгу', d['title'], money(a, d['currency']), ru(date), ('. ' + note) if note else ''))
+        log(c, i, o, op, '%s «%s»: %s от %s%s' % ('Выплата по долгу' if op == 'pay' else 'Добавлено к долгу', d['title'], money(a, d['currency']), ru(date), ('. ' + note) if note else ''))
     return jsonify(ok=True, id=o)
 @bp.route('/api/debt_ops/<int:o>/void', methods=['POST'])
 def api_op_void(o):

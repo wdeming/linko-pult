@@ -26,15 +26,6 @@ def revenue(cut, ddmm, per):
             return res
         except (TypeError, ValueError): continue
     return None
-def debts(ddmm):
-    fn = os.path.join(ROOT, MANUAL['debts'] % ddmm)
-    if not os.path.exists(fn): return None
-    import openpyxl
-    ws = openpyxl.load_workbook(fn)['Долги']; res = []
-    for r in range(2, 20):
-        a, c, d = ws.cell(r, 1).value, ws.cell(r, 3).value, ws.cell(r, 4).value
-        if a and a != 'ИТОГО' and isinstance(c, (int, float)): res.append((str(a).strip(), float(c), float(d or 0)))
-    return res
 for cut in cuts:
     dn = os.path.join(P, 'work', cut); t = TAG[int(cut[5:7])]; m = cut[:7]
     L = lambda n: json.load(open(os.path.join(dn, 'x_%s_%s.json' % (t, n)), encoding='utf-8'))

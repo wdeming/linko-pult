@@ -151,3 +151,4 @@ a.pl-btn{text-decoration:none;display:inline-block}
 .db-f textarea{resize:vertical}.db-pv{color:var(--color-fg-muted);min-height:1em}.db-cur{justify-self:start}
 .db-err{color:var(--color-bad);font-size:13px;margin:4px 0 0}
 @media (max-width:640px){.db-nums{grid-template-columns:1fr}.db-facts{grid-template-columns:1fr}.db-lr{grid-template-columns:1fr;gap:2px}}
+.db-tbl td:nth-child(2),.db-tbl th:nth-child(2),.db-ops td:nth-child(2),.db-ops th:nth-child(2),.db-ops th:nth-child(4){text-align:left}
