@@ -11,7 +11,7 @@ DOCS = {'mrr': 'MRR_и_когортное_удержание_2026_на_%s.xlsx',
         'multi': 'Клиенты_с_несколькими_подписками_на_%s.xlsx', 'top20': 'Концентрация_выручки_и_условия_топ20_на_%s.xlsx', 'cost': 'Себестоимость_поддержки_внедрения_инфраструктуры_на_%s.xlsx',
         'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx',
         'cash': 'Поступления_денег_%s_2026_на_%s.xlsx', 'exp': 'Расходы_кэшфло_и_за_период_%s_2026_на_%s.xlsx'}
-MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx', 'debts': 'Все_долги_на_%s_ЧЕРНОВИК.xlsx'}
+MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx'}
 metrics, series = [], []
 def revenue(cut, ddmm, per):
     import openpyxl
@@ -196,10 +196,6 @@ for cut in cuts:
         for k, v in rv.items():
             add('revenue', 'rev_' + str(list(rv).index(k)), k, v[m], 'm', 'up')
             for mmm, val in v.items(): ser('revenue_m', ml(mmm), k, val)
-    db = debts(ddmm)
-    if db:
-        add('debts', 'debt_total', 'Операционные долги (расчётно)', sum(c - d for _, c, d in db), 'm', 'down'); add('debts', 'debt_paid', 'Оплачено за два месяца', sum(d for _, c, d in db), 'm', 'up')
-        for nm, c, d in db: ser('debts', nm, 'Было', c); ser('debts', nm, 'Остаток (расчётно)', c - d)
     # --- Excel
     files = {}
     for doc, pat in list(DOCS.items()) + list(MANUAL.items()):

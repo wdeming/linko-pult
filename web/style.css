@@ -122,3 +122,32 @@ a.pl-btn{text-decoration:none;display:inline-block}
 .pl-modal-text{margin:0 0 8px;line-height:1.5}
 .pl-modal-note{margin:0 0 4px;font-size:13px;color:var(--color-fg-muted);line-height:1.45}
 .pl-modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+/* долги */
+.db-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:14px 0 8px}
+.db-q{font:inherit;font-size:var(--cds-font-size-caption);padding:6px 10px;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-panel);color:var(--color-fg);min-width:min(100%,280px)}
+.db-tile .pl-tv{font-size:20px}.db-tsub{font-size:12px;color:var(--color-fg-muted);margin-top:4px}
+.db-tbl td{vertical-align:top}.db-row{cursor:pointer}.db-row:hover td{background:color-mix(in srgb,var(--color-fg) 4%,transparent)}.db-row:focus-visible{outline:2px solid var(--color-fg);outline-offset:-2px}
+.db-t{font-weight:var(--cds-font-weight-medium);white-space:normal;min-width:160px}.db-c{color:var(--color-fg-muted);font-size:12px;margin:2px 0 0;white-space:normal}
+.db-k{color:var(--color-fg-muted)}.db-left{font-weight:var(--cds-font-weight-medium)}.db-bad{color:var(--color-bad)}.db-empty{text-align:left!important;color:var(--color-fg-muted);padding:18px 8px!important;white-space:normal!important}
+.db-st{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--color-border-line);color:var(--color-fg-muted)}
+.db-st.bad{border-color:var(--color-bad);color:var(--color-bad)}.db-st.ok{border-color:var(--color-ok);color:var(--color-ok)}.db-st.void{text-decoration:line-through}
+.db-void td{color:var(--color-fg-muted)}.db-void td:not(:last-child){text-decoration:line-through}
+.db-log{margin-top:14px;font-size:13px}.db-log summary{cursor:pointer;color:var(--color-fg-muted);padding:6px 0}.db-lr{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:5px 0;border-bottom:1px solid var(--color-border-line)}
+.db-lw{color:var(--color-fg-muted);font-size:12px}
+.pl-modal.db-wide{max-width:min(96vw,860px);position:relative}
+.db-x{position:absolute;top:10px;right:12px;font-size:22px;line-height:1;background:none;border:0;color:var(--color-fg-muted);cursor:pointer;padding:4px 8px}
+.db-ch{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-right:36px}.db-ch .pl-modal-title{margin-bottom:2px}
+.db-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}
+.db-num{border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:10px 12px;display:grid;gap:2px}.db-num span{font-size:12px;color:var(--color-fg-muted)}.db-num b{font-size:18px;font-weight:600}.db-num small{font-size:12px;color:var(--color-fg-muted)}
+.db-numl{border-color:var(--color-fg)}
+.db-facts{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;margin:0 0 12px;font-size:13px}.db-facts dt{color:var(--color-fg-muted)}.db-facts dd{margin:0;white-space:pre-wrap}
+.db-acts{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px}.db-danger{color:var(--color-bad)}
+.db-h4{margin:16px 0 6px;font-size:14px;font-weight:600}
+.db-ops td{vertical-align:top}.db-note{white-space:normal!important;text-align:left!important;min-width:140px}.db-who{color:var(--color-fg-muted);font-size:12px}.db-pay{color:var(--color-ok)}
+.db-link{background:none;border:0;color:var(--color-fg-muted);text-decoration:underline;cursor:pointer;font:inherit;font-size:12px;padding:0}.db-vr{font-size:12px;color:var(--color-fg-muted);white-space:normal}
+.db-f{display:grid;gap:4px;margin:0 0 10px;font-size:13px}.db-f>span{color:var(--color-fg-muted)}
+.db-f input,.db-f select,.db-f textarea{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-bg);color:var(--color-fg);width:100%;box-sizing:border-box}
+.db-f textarea{resize:vertical}.db-pv{color:var(--color-fg-muted);min-height:1em}.db-cur{justify-self:start}
+.db-err{color:var(--color-bad);font-size:13px;margin:4px 0 0}
+@media (max-width:640px){.db-nums{grid-template-columns:1fr}.db-facts{grid-template-columns:1fr}.db-lr{grid-template-columns:1fr;gap:2px}}

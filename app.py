@@ -139,3 +139,5 @@ def api_history():
     with db() as c: rows = c.execute('select id, started, finished, state, cut, docs, msg, who from run order by id desc limit 50').fetchall()
     return jsonify(runs=[dict(r) for r in rows])
 init()
+import debts
+debts.install(app, db, now, CFG, CALC)

@@ -3,7 +3,7 @@
 python3 pult_server/deploy.py "что изменено"   — заберёт правки с GitHub, отправит изменённые файлы, зафиксирует их в git, отправит на GitHub и перезапустит сервис."""
 import os, sys, hashlib, paramiko
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))); R = '/opt/linko-pult'
-MAP = [('pult_server/app.py', 'app.py'), ('pult_server/backup.py', 'backup.py'), ('pult_server/deploy.py', 'deploy.py')] + [('pult_server/web/' + f, 'web/' + f) for f in ('index.html', 'style.css', 'app.js', 'shim.js', 'boot.js')]
+MAP = [('pult_server/app.py', 'app.py'), ('pult_server/debts.py', 'debts.py'), ('pult_server/backup.py', 'backup.py'), ('pult_server/deploy.py', 'deploy.py')] + [('pult_server/web/' + f, 'web/' + f) for f in ('index.html', 'style.css', 'app.js', 'shim.js', 'boot.js', 'debts.js')]
 MAP += [(f, 'calc/' + f) for f in ('cfg_cut.py', 'cls.py', 'style_lib.py', 'extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', 'extract_oct31_cash.py', 'gen_oct31_cash.py', 'extract_oct31_exp.py', 'gen_oct31_exp.py',
         'gen_oct31_clients.py', 'gen_oct31_multi.py', 'gen_oct31_top20.py', 'gen_oct31_cost.py', 'gen_oct31_metrics.py', 'gen_oct31_mrr.py', 'gen_oct31_churn.py', 'gen_oct31_calls.py')]
 MAP += [('pult/' + f, 'calc/pult/' + f) for f in ('refresh.py', 'build_data.py', 'extract_staff.py', 'odoo_db.py', 'today.py')]
@@ -38,5 +38,5 @@ if sent:
     trailer = '\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01VdFm2FEr6VgqW7aE1pqVUg'
     print(sh("cd %s && git add -A && git -c user.name=Claude -c user.email=pult@linko.local commit -q -F - <<'M'\n%s%s\nM\ngit log --oneline | head -1" % (R, msg, trailer)))
 print(sh('cd %s && git push -q origin main 2>&1; git status -sb | head -1' % R).strip())
-if 'app.py' in sent + pulled: print(sh('sudo /usr/bin/systemctl restart linko-pult && sleep 2 && curl -s -o /dev/null -w "сервис %{http_code}\\n" http://127.0.0.1:8082/healthz'))
+if {'app.py', 'debts.py'} & set(sent + pulled): print(sh('sudo /usr/bin/systemctl restart linko-pult && sleep 2 && curl -s -o /dev/null -w "сервис %{http_code}\\n" http://127.0.0.1:8082/healthz'))
 c.close()
