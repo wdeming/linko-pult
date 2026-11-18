@@ -100,7 +100,7 @@ def row(name, v, fmt, how, fill=GREY, bold=False):
     r += 1; return r - 1
 
 section(ws, "A%d" % r, "РАЗМЕР БИЗНЕСА"); r += 1
-row('MRR (подписка), сум/мес', MRR, NUM, 'Сумма recurring_monthly подписок «в работе» и «на паузе» на ' + CUT_RU)
+row('MRR (подписка), сум/мес', MRR, NUM, 'Нарастающий итог журнала изменений MRR в Odoo (создания, расширения, сокращения, отток) по ' + CUT_RU + ', как график «Изменение MRR»; USD по 12 000')
 row('Разовая выручка, сум/мес в среднем', ONCE_MO, NUM,
     'POS: обучение + доработки POS. SFA: доработки, производство, Perfect store, обучение SFA и AI. '
     'Начислено за %s 2026 ÷ %d месяцев' % (PERIOD, NM), YELLOW)

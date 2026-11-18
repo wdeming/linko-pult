@@ -128,7 +128,11 @@ dump('survival', surv)
 # ───────── 5. константы карточки ─────────
 c = {}
 c['SRV'] = {p: sum(1 for b in base if b['prod'] == p) for p in ('POS', 'SFA')}
-c['MRR'] = {p: sum(b['mrr'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}
+c['MRR_SUBS'] = {p: sum(b['mrr'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}   # по подпискам (справочно)
+# MRR на срез = нарастающий итог журнала изменений MRR (sale.order.log) по дату среза — как график «Изменение MRR» в Odoo
+_lj = {r['prod']: float(r['s']) for r in db.query(f"""select {PROD_SQL} prod, sum(case when l.currency_id=1 then l.amount_signed*12000 else l.amount_signed end) s
+   from sale_order_log l join sale_order so on so.id=l.order_id where l.event_date <= date '{CUT}' group by 1""")}
+c['MRR'] = {p: _lj.get(p, 0.0) for p in ('POS', 'SFA')}
 c['SPLIT'] = {p: {s: [sum(1 for b in base if b['prod']==p and b['st']==s), sum(b['mrr'] for b in base if b['prod']==p and b['st']==s)]
                   for s in ('3_progress','4_paused')} for p in ('POS','SFA')}
 bp = {b['id']: b['prod'] for b in base}

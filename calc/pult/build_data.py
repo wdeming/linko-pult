@@ -46,7 +46,7 @@ for cut in cuts:
     def ser(chart, x, s, v):
         series.append({'id': '%s.%s.%s.%s' % (cut, chart, x, s), 'cut': cut, 'chart': chart, 'x': x, 's': s, 'v': None if v is None else round(float(v), 6)})
     mov = lambda e, p: M['mov'].get('%s|%s|%s' % (p, m, e), 0)
-    tm = R['MRR'][PP] + R['MRR'][F]
+    tm = R['MRR'][PP] + R['MRR'][F]; tmj = tm
     # --- сводка и MRR
     add('mrr', 'mrr_total', 'MRR всего', tm, 'm', 'up'); add('mrr', 'mrr_sfa', 'MRR SFA', R['MRR'][F], 'm', 'up', F); add('mrr', 'mrr_pos', 'MRR POS', R['MRR'][PP], 'm', 'up', PP)
     add('mrr', 'subs', 'Подписок в базе', len(base), 'n', 'up'); add('mrr', 'subs_sfa', 'Подписок SFA', R['SRV'][F], 'n', 'up', F); add('mrr', 'subs_pos', 'Подписок POS', R['SRV'][PP], 'n', 'up', PP)
@@ -124,7 +124,7 @@ for cut in cuts:
     for c in rk[:20]: ser('top_clients', c['name'][:28], 'MRR', c['mrr'])
     # --- себестоимость
     ct = K['COGS'][PP] + K['COGS'][F]
-    add('cost', 'cost_total', 'Себестоимость в месяц', ct, 'm', 'down'); add('cost', 'cost_pct', 'Себестоимость, % от MRR', ct / tm, 'p', 'down'); add('cost', 'cost_sfa', 'На SFA', K['COGS'][F], 'm', 'down', F); add('cost', 'cost_pos', 'На POS', K['COGS'][PP], 'm', 'down', PP)
+    add('cost', 'cost_total', 'Себестоимость в месяц', ct, 'm', 'down'); add('cost', 'cost_pct', 'Себестоимость, % от MRR', ct / tmj, 'p', 'down'); add('cost', 'cost_sfa', 'На SFA', K['COGS'][F], 'm', 'down', F); add('cost', 'cost_pos', 'На POS', K['COGS'][PP], 'm', 'down', PP)
     for k, nm in (('SUP', 'Техподдержка'), ('ONP', 'Onboarding POS'), ('ONS', 'Onboarding SFA'), ('KA', 'Ключевые клиенты'), ('HOST_AVG', 'Хостинг (среднее)')):
         add('cost', 'c_' + k, nm, K[k], 'm', 'down'); ser('cost_parts', nm, 'Сумма в месяц', K[k])
     add('cost', 'host_m', 'Оплаты хостинга за месяц', K['HOST_M'].get(m), 'm', 'down')
@@ -163,7 +163,7 @@ for cut in cuts:
             ser('cash_comm', ml(mm), 'Комиссии', CS['C'].get(mm, 0))
     # --- оргструктура
     add('org', 'staff', 'Штат, человек', sum(x['n'] for x in fot), 'n', ''); add('org', 'payroll', 'Оклады на руки в месяц', sum(x['sal'] for x in fot), 'm', 'down')
-    add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tm, 'p', 'down')
+    add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tmj, 'p', 'down')
     for x in fot: ser('staff_dep', (x['dep'] or '—')[:30], 'Человек', x['n']); ser('payroll_dep', (x['dep'] or '—')[:30], 'Оклады', x['sal'])
     # --- выручка и долги (из файлов комплекта, обновляются вручную)
     rv = revenue(cut, ddmm, per)
