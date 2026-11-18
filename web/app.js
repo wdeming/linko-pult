@@ -1,8 +1,14 @@
 (() => {
   const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cost', 'metrics', 'org', 'calls', 'debts'];
-  const CH = {mrr_end: ['stack', 'm'], flow_SFA: ['group', 'm'], flow_POS: ['group', 'm'], retention: ['line', 'p'], survival: ['line', 'p'], churn_n: ['group', 'n'], churn_pct: ['line', 'p'],
-    churn_cats: ['hbar', 'p'], seg_clients: ['hbar', 'n'], seg_mrr: ['hbar', 'm'], multi_top: ['hbar', 'm'], top_share: ['hbar', 'p'], top_clients: ['hbar', 'm'], revenue_m: ['stack', 'm'],
-    cost_parts: ['hbar', 'm'], hosting: ['stack', 'm'], unit: ['group', 'm'], staff_dep: ['hbar', 'n'], payroll_dep: ['hbar', 'm'], calls_m: ['stack', 'n'], debts: ['group', 'm']};
+  // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
+  const CH = {
+    mrr_end: ['stack', 'm', {row: 'Итого MRR'}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
+    retention: ['line', 'p', {}], survival: ['line', 'p', {}],
+    churn_closed: ['stack', 'n', {row: 'Всего', col: true}], churn_new: ['stack', 'n', {row: 'Всего', col: true}], churn_pct: ['line', 'p', {}],
+    churn_cats: ['hbar', 'p', {col: true}], seg_clients: ['hbar', 'n', {col: true}], seg_mrr: ['hbar', 'm', {col: true}], multi_top: ['hbar', 'm', {col: 'Итого по показанным'}],
+    top_share: ['hbar', 'p', {}], top_clients: ['hbar', 'm', {col: 'Итого топ-20'}], revenue_m: ['stack', 'm', {row: 'Всего', col: true}],
+    cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['stack', 'm', {col: true}], unit: ['group', 'm', {}],
+    staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}], debts: ['group', 'm', {col: true}]};
   const HERO = ['mrr_total', 'subs', 'clients', 'nrr_SFA', 'ltvcac_SFA', 'cost_pct'];
   const view = {}; let msgText = '';
   const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
@@ -59,23 +65,34 @@
     if (!rows.length) e.append(el('p', 'pl-file', 'Для этого среза показателей нет.'));
   }
 
-  function table(e, rows, xs, ss, k) {
-    const w = el('div', 'pl-tw'), t = el('table', 'pl-tbl'), hr = el('tr');
-    hr.append(el('th', '', ''), ...ss.map((s) => el('th', '', s)));
+  function table(e, m, xs, ss, k, o) {
+    const w = el('div', 'pl-tw'), t = el('table', 'pl-tbl'), hr = el('tr'), v = (x, s) => m.get(x + '|' + s);
+    const cols = ss.slice(); if (o.row && ss.length > 1) cols.push(o.row);
+    const cell = (x, s) => (s === o.row && ss.length > 1) ? d3.sum(ss, (z) => v(x, z) || 0) : v(x, s);
+    hr.append(el('th', '', ''), ...cols.map((s) => el('th', s === o.row ? 'pl-tot' : '', s)));
     const tb = el('tbody');
-    xs.forEach((x) => { const tr = el('tr'); tr.append(el('td', '', x), ...ss.map((s) => el('td', '', fmt(rows.get(x + '|' + s), k)))); tb.append(tr); });
+    xs.forEach((x) => { const tr = el('tr'); tr.append(el('td', '', x), ...cols.map((s) => el('td', s === o.row ? 'pl-tot' : '', fmt(cell(x, s), k)))); tb.append(tr); });
+    if (o.col) { const tr = el('tr', 'pl-totrow'); tr.append(el('td', '', o.col === true ? 'Итого' : o.col), ...cols.map((s) => el('td', '', fmt(d3.sum(xs, (x) => cell(x, s) || 0), k)))); tb.append(tr); }
     const th = el('thead'); th.append(hr); t.append(th, tb); w.append(t); e.append(w);
   }
   function chart(e, id, S, cut, asTable) {
-    const [type, k] = CH[id], data = S.filter((r) => r.cut === cut && r.chart === id);
+    const [type, k, o] = CH[id], data = S.filter((r) => r.cut === cut && r.chart === id);
     e.replaceChildren();
     if (!data.length) { e.append(el('p', 'pl-file', 'Для этого среза данных нет.')); return; }
     const xs = [...new Set(data.map((r) => r.x))], ss = [...new Set(data.map((r) => r.s))], m = new Map(data.map((r) => [r.x + '|' + r.s, r.v]));
     const val = (x, s) => m.get(x + '|' + s) ?? 0;
-    if (asTable) return table(e, m, xs, ss, k);
+    if (asTable) return table(e, m, xs, ss, k, o);
     if (ss.length > 1) { const lg = el('div', 'pl-leg'); ss.forEach((s, i) => { const it = el('span'), sw = el('i'); sw.style.background = color(i); it.append(sw, s); lg.append(it); }); e.append(lg); }
     const W = Math.max(260, e.clientWidth || 600), tip = el('div', 'pl-tip'); tip.hidden = true;
-    const showTip = (px, title, lines) => { tip.replaceChildren(el('b', '', title), ...lines.map((t) => el('span', '', t)).flatMap((n) => [n, el('br')])); tip.hidden = false; tip.style.left = Math.max(0, Math.min(px + 12, W - 190)) + 'px'; tip.style.top = '28px'; };
+    const showTip = (ev, title, lines) => {
+      tip.replaceChildren(el('b', '', title)); lines.forEach(([lab, val, i, tot]) => { const r = el('div', tot ? 'pl-tipr pl-tiptot' : 'pl-tipr'), sw = el('i');
+        if (i != null) sw.style.background = color(i); r.append(sw, el('span', '', lab), el('span', 'pl-tipv', val)); tip.append(r); });
+      tip.hidden = false; const b = e.getBoundingClientRect(), px = ev.clientX - b.left, py = ev.clientY - b.top, tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = Math.max(0, px + 14 + tw > b.width ? px - tw - 14 : px + 14) + 'px'; tip.style.top = Math.max(0, Math.min(py - th / 2, b.height - th)) + 'px';
+    };
+    const hide = () => { tip.hidden = true; };
+    const linesFor = (x) => { const L = ss.filter((s) => m.has(x + '|' + s)).map((s) => [s, fmt(val(x, s), k), ss.indexOf(s)]);
+      if (o.row && ss.length > 1) L.push([o.row, fmt(d3.sum(ss, (s) => val(x, s)), k), null, true]); return L; };
     if (type === 'hbar') {
       const s0 = ss[0], H = Math.max(110, xs.length * 26 + 12), ml = Math.min(W * 0.46, d3.max(xs, (x) => x.length) * 6.6 + 12), mr = 64;
       const svg = d3.create('svg').attr('viewBox', `0 0 ${W} ${H}`).attr('height', H).attr('role', 'img').attr('aria-label', 'Горизонтальные столбцы: ' + xs.slice(0, 4).join(', '));
@@ -84,7 +101,10 @@
       g.append('text').attr('class', 'pl-axl').attr('x', ml - 6).attr('y', (d) => y(d) + y.bandwidth() / 2).attr('dy', '0.35em').attr('text-anchor', 'end').text((d) => d.length > ml / 6.6 ? d.slice(0, Math.floor(ml / 6.6) - 1) + '…' : d);
       g.append('rect').attr('x', ml).attr('y', (d) => y(d)).attr('height', y.bandwidth()).attr('width', (d) => Math.max(1, x(val(d, s0)) - ml)).attr('rx', 2).style('fill', color(0));
       g.append('text').attr('class', 'pl-axl').attr('x', (d) => x(val(d, s0)) + 5).attr('y', (d) => y(d) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => fmt(val(d, s0), k));
-      e.append(svg.node()); return;
+      g.append('rect').attr('x', 0).attr('width', W).attr('y', (d) => y(d) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent').attr('class', 'pl-hit')
+        .on('pointerenter pointermove', (ev, d) => { svg.selectAll('.pl-hit').classed('on', (z) => z === d); showTip(ev, d, [[s0, fmt(val(d, s0), k), 0]]); })
+        .on('pointerleave', () => { svg.selectAll('.pl-hit').classed('on', false); hide(); });
+      e.append(svg.node(), tip); return;
     }
     const H = 250, mt = 8, mb = 24, band = d3.scaleBand().domain(xs).padding(type === 'line' ? 0 : 0.22);
     let lo = 0, hi = 0;
@@ -114,15 +134,16 @@
       xs.forEach((x) => ss.forEach((s, i) => { const v = val(x, s); svg.append('rect').attr('x', band(x) + inner(s)).attr('width', inner.bandwidth()).attr('y', y(Math.max(0, v))).attr('height', Math.max(0.5, Math.abs(y(v) - y(0)))).style('fill', color(i)); }));
       if (lo < 0) svg.append('line').attr('x1', ml).attr('x2', W - 6).attr('y1', y(0)).attr('y2', y(0)).style('stroke', 'var(--cds-chart-axis)');
     }
-    svg.append('g').selectAll('rect').data(xs).join('rect').attr('x', (x) => band(x)).attr('width', band.step()).attr('y', mt).attr('height', H - mb - mt).attr('fill', 'transparent')
-      .on('pointerenter pointermove', (ev, x) => showTip(band(x), x, ss.filter((s) => m.has(x + '|' + s)).map((s) => s + ': ' + fmt(val(x, s), k)).concat(type === 'stack' && ss.length > 1 ? ['Итого: ' + fmt(d3.sum(ss, (s) => val(x, s)), k)] : [])))
-      .on('pointerleave', () => { tip.hidden = true; });
+    const off = type === 'line' ? 0 : band.step() * band.paddingInner() / 2;
+    svg.append('g').selectAll('rect').data(xs).join('rect').attr('class', 'pl-hit').attr('x', (x) => band(x) - off).attr('width', band.step()).attr('y', mt).attr('height', H - mb - mt).attr('fill', 'transparent')
+      .on('pointerenter pointermove', (ev, x) => { svg.selectAll('.pl-hit').classed('on', (z) => z === x); showTip(ev, x, linesFor(x)); })
+      .on('pointerleave', () => { svg.selectAll('.pl-hit').classed('on', false); hide(); });
     e.append(svg.node(), tip);
   }
 
   Object.keys(CH).forEach((id) => dash.draw('viz-' + id, (e) => {
     const S = rowsOf('series'), M = rowsOf('metrics'); if (!S || !M) return dash0(e);
-    const sec = e.closest('[data-doc]'); chart(e, id, S, curCut(M), sec && view[sec.dataset.doc] === 'table');
+    const sec = e.closest('[data-doc]'); chart(e, id, S, curCut(M), !sec || view[sec.dataset.doc] !== 'chart');
   }));
   DOCS.forEach((doc) => {
     dash.draw('kpi-' + doc, (e) => tiles(e, doc));

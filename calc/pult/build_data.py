@@ -49,31 +49,53 @@ for cut in cuts:
     # --- сводка и MRR
     add('mrr', 'mrr_total', 'MRR всего', tm, 'm', 'up'); add('mrr', 'mrr_sfa', 'MRR SFA', R['MRR'][F], 'm', 'up', F); add('mrr', 'mrr_pos', 'MRR POS', R['MRR'][PP], 'm', 'up', PP)
     add('mrr', 'subs', 'Подписок в базе', len(base), 'n', 'up'); add('mrr', 'subs_sfa', 'Подписок SFA', R['SRV'][F], 'n', 'up', F); add('mrr', 'subs_pos', 'Подписок POS', R['SRV'][PP], 'n', 'up', PP)
+    # потоки MRR: всего, SFA, POS
+    for key, lab, e, sign, good in (('new', 'Новые продажи за месяц', '0_creation', 1, 'up'), ('exp', 'Расширения за месяц', '1_expansion', 1, 'up'),
+                                    ('con', 'Сжатия за месяц', '15_contraction', -1, 'down'), ('chu', 'Отток за месяц', '2_churn', -1, 'down')):
+        add('mrr', key + '_total', lab + ', всего', sign * (mov(e, F) + mov(e, PP)), 'm', good)
+        for p in (F, PP): add('mrr', key + '_' + p, '%s, %s' % (lab, p), sign * mov(e, p), 'm', good, p)
+    st = {p: M['GN']['%s|%s' % (p, m)]['start'] for p in (F, PP)}; S0 = st[F] + st[PP]
+    lost = sum(mov('2_churn', p) + mov('15_contraction', p) for p in (F, PP)); gain = sum(mov('1_expansion', p) for p in (F, PP))
+    add('mrr', 'grr_total', 'GRR месяца, всего', (S0 + lost) / S0, 'p', 'up')
+    for p in (F, PP): add('mrr', 'grr_' + p, 'GRR месяца, %s' % p, R['GRR'][p], 'p', 'up', p)
+    add('mrr', 'nrr_total', 'NRR месяца, всего', (S0 + lost + gain) / S0, 'p', 'up')
+    for p in (F, PP): add('mrr', 'nrr_' + p, 'NRR месяца, %s' % p, R['NRR'][p], 'p', 'up', p)
     for p in (F, PP):
-        add('mrr', 'new_' + p, 'Новые продажи за месяц, %s' % p, mov('0_creation', p), 'm', 'up', p)
-        add('mrr', 'exp_' + p, 'Расширения за месяц, %s' % p, mov('1_expansion', p), 'm', 'up', p)
-        add('mrr', 'con_' + p, 'Сжатия за месяц, %s' % p, -mov('15_contraction', p), 'm', 'down', p)
-        add('mrr', 'chu_' + p, 'Отток за месяц, %s' % p, -mov('2_churn', p), 'm', 'down', p)
-        add('mrr', 'grr_' + p, 'GRR месяца, %s' % p, R['GRR'][p], 'p', 'up', p); add('mrr', 'nrr_' + p, 'NRR месяца, %s' % p, R['NRR'][p], 'p', 'up', p)
         for x in R['series'][p]:
             ser('mrr_end', ml(x['m']), p, x['end'])
             for k, nm in (('new', 'Новые'), ('exp', 'Расширения'), ('con', 'Сжатия'), ('chu', 'Отток')): ser('flow_' + p, ml(x['m']), nm, x[k])
         for k, g in M['GN'].items():
             if k.startswith(p + '|'): ser('retention', ml(k.split('|')[1]), 'GRR ' + p, g['grr']); ser('retention', ml(k.split('|')[1]), 'NRR ' + p, g['nrr'])
         for a in surv[p]: ser('survival', '%d мес' % a[0], p, a[3])
+    for mm in sorted({k.split('|')[1] for k in M['GN']}):
+        g = [M['GN'].get('%s|%s' % (p, mm)) for p in (F, PP)]
+        if all(g):
+            s0 = sum(x['start'] for x in g)
+            ser('retention', ml(mm), 'GRR всего', sum(x['start'] * x['grr'] for x in g) / s0); ser('retention', ml(mm), 'NRR всего', sum(x['start'] * x['nrr'] for x in g) / s0)
+    sv = {}
+    for p in (F, PP):
+        for a in surv[p]: sv.setdefault(a[0], [0, 0]); sv[a[0]][0] += a[1]; sv[a[0]][1] += a[2]
+    for age, (al, n) in sorted(sv.items()):
+        if n: ser('survival', '%d мес' % age, 'Всего', al / n)
     # --- отток
     cats = collections.defaultdict(float)
     for k, v in C['cats'].items(): cats[k.split('|')[0]] += v[1]
     tc = sum(cats.values())
+    d2 = {p: C['DYN']['%s|%s' % (p, m)] for p in (F, PP)}
+    add('churn', 'closed_total', 'Закрыто подписок за месяц, всего', d2[F]['n'] + d2[PP]['n'], 'n', 'down')
+    for p in (F, PP): add('churn', 'closed_' + p, 'Закрыто подписок за месяц, %s' % p, d2[p]['n'], 'n', 'down', p)
+    add('churn', 'churnpct_total', 'Отток MRR за месяц, всего', (d2[F]['loss'] + d2[PP]['loss']) / (d2[F]['base_mrr'] + d2[PP]['base_mrr']), 'p', 'down')
+    for p in (F, PP): add('churn', 'churnpct_' + p, 'Отток MRR за месяц, %s' % p, d2[p]['loss'] / d2[p]['base_mrr'], 'p', 'down', p)
+    add('churn', 'newn_total', 'Новых подписок за месяц, всего', d2[F]['new'] + d2[PP]['new'], 'n', 'up')
+    for p in (F, PP): add('churn', 'newn_' + p, 'Новых подписок за месяц, %s' % p, d2[p]['new'], 'n', 'up', p)
     for p in (F, PP):
-        d = C['DYN']['%s|%s' % (p, m)]
-        add('churn', 'closed_' + p, 'Закрыто подписок за месяц, %s' % p, d['n'], 'n', 'down', p)
-        add('churn', 'churnpct_' + p, 'Отток MRR за месяц, %s' % p, d['loss'] / d['base_mrr'], 'p', 'down', p)
-        add('churn', 'newn_' + p, 'Новых подписок за месяц, %s' % p, d['new'], 'n', 'up', p)
         for k, d in C['DYN'].items():
             if k.startswith(p + '|'):
-                ser('churn_n', ml(k.split('|')[1]), 'Закрыто ' + p, d['n']); ser('churn_n', ml(k.split('|')[1]), 'Новых ' + p, d['new'])
+                ser('churn_closed', ml(k.split('|')[1]), p, d['n']); ser('churn_new', ml(k.split('|')[1]), p, d['new'])
                 ser('churn_pct', ml(k.split('|')[1]), p, d['loss'] / d['base_mrr'])
+    for mm in sorted({k.split('|')[1] for k in C['DYN']}):
+        g = [C['DYN'].get('%s|%s' % (p, mm)) for p in (F, PP)]
+        if all(g): ser('churn_pct', ml(mm), 'Всего', sum(x['loss'] for x in g) / sum(x['base_mrr'] for x in g))
     add('churn', 'closed_cum', 'Закрыто с 01.02 накопленно', C['tot'][PP][0] + C['tot'][F][0], 'n', 'down'); add('churn', 'lost_cum', 'Потерянный MRR с 01.02', C['tot'][PP][1] + C['tot'][F][1], 'm', 'down')
     for k, v in sorted(cats.items(), key=lambda x: -x[1]): ser('churn_cats', k, 'Доля в потерянном MRR', v / tc)
     # --- клиенты, мульти, концентрация
@@ -103,7 +125,7 @@ for cut in cuts:
     ct = K['COGS'][PP] + K['COGS'][F]
     add('cost', 'cost_total', 'Себестоимость в месяц', ct, 'm', 'down'); add('cost', 'cost_pct', 'Себестоимость, % от MRR', ct / tm, 'p', 'down'); add('cost', 'cost_sfa', 'На SFA', K['COGS'][F], 'm', 'down', F); add('cost', 'cost_pos', 'На POS', K['COGS'][PP], 'm', 'down', PP)
     for k, nm in (('SUP', 'Техподдержка'), ('ONP', 'Onboarding POS'), ('ONS', 'Onboarding SFA'), ('KA', 'Ключевые клиенты'), ('HOST_AVG', 'Хостинг (среднее)')):
-        add('cost', 'c_' + k, nm, K[k], 'm', 'down'); ser('cost_parts', nm, 'сум в месяц', K[k])
+        add('cost', 'c_' + k, nm, K[k], 'm', 'down'); ser('cost_parts', nm, 'Сумма в месяц', K[k])
     add('cost', 'host_m', 'Оплаты хостинга за месяц', K['HOST_M'].get(m), 'm', 'down')
     for mmm, v in K['HOST_M'].items(): ser('hosting', ml(mmm), 'Оплаты хостинга', v)
     # --- ключевые метрики

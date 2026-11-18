@@ -82,3 +82,13 @@ a.pl-btn{text-decoration:none;display:inline-block}
 @media (max-width:480px){.pl-hero,.pl-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.pl-spark{display:none}.pl-title{font-size:22px}}
 .pl-fig{overflow:hidden}
 #dash-root{overflow-x:clip}
+.pl-tip{display:grid;gap:3px;min-width:150px}
+.pl-tip b{margin-bottom:2px}
+.pl-tipr{display:grid;grid-template-columns:10px 1fr auto;gap:6px;align-items:center}
+.pl-tipr i{width:10px;height:10px;border-radius:2px}
+.pl-tipv{font-variant-numeric:tabular-nums;font-weight:var(--cds-font-weight-medium);text-align:right}
+.pl-tiptot{border-top:1px solid var(--color-border-line);padding-top:3px;font-weight:var(--cds-font-weight-medium)}
+.pl-hit{cursor:crosshair}.pl-hit.on{fill:var(--color-fg);fill-opacity:.06}
+.pl-tbl .pl-tot{font-weight:var(--cds-font-weight-medium);background:color-mix(in srgb,var(--color-fg) 4%,transparent)}
+.pl-tbl th.pl-tot{background:var(--color-panel)}
+.pl-tbl .pl-totrow td{font-weight:var(--cds-font-weight-medium);border-top:2px solid var(--color-border-line);border-bottom:0}
