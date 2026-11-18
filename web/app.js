@@ -10,7 +10,6 @@
     cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['stack', 'm', {col: true}], unit: ['group', 'm', {}],
     staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}], debts: ['group', 'm', {col: true}],
     cash_prod: ['stack', 'm', {row: 'Поступило всего', col: true}], cash_meth: ['stack', 'm', {row: 'Всего', col: true}], cash_comm: ['stack', 'm', {col: true}]};
-  const HERO = ['mrr_total', 'subs', 'clients', 'nrr_SFA', 'ltvcac_SFA', 'cost_pct'];
   const view = {}; let msgText = '';
   const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
   const nfd = (d) => new Intl.NumberFormat('ru-RU', {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -177,7 +176,45 @@
       e.textContent = f ? 'Файл Excel: ' + f.label + ' · собран ' + new Date(f.good).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : 'Файл Excel для этого среза не собран.';
     });
   });
-  dash.draw('hero', (e) => tiles(e, HERO));
+  // ---------- блок «Сейчас в Odoo» ----------
+  const RMG = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const dayRu = (s) => (+s.slice(8, 10)) + ' ' + RMG[+s.slice(5, 7) - 1];
+  const sgn = (v, k) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v), k);
+  function ttile(label, value, kind, delta, deltaKind, note, good, chip) {
+    const t = el('div', 'pl-tile'), l = el('div', 'pl-tl');
+    l.append(el('span', '', label)); if (chip) l.append(el('span', 'pl-chip ' + (chip === 'ВСЕГО' ? 'all' : chip.toLowerCase()), chip));
+    let tn = '';
+    if (delta && delta.v != null && good) tn = Math.abs(delta.v) < 1 ? '' : ((delta.v > 0) === (good === 'up') ? 'good' : 'bad');
+    t.className = 'pl-tile ' + tn;
+    t.append(l, el('div', 'pl-tv', typeof value === 'string' ? value : fmt(value, kind)));
+    if (delta && delta.v != null) t.append(el('div', 'pl-d ' + tn, sgn(delta.v, deltaKind) + (delta.pct != null && isFinite(delta.pct) ? ' (' + (delta.pct > 0 ? '+' : '−') + nfd(1).format(Math.abs(delta.pct) * 100) + '%)' : '') + ' ' + delta.text));
+    if (note) t.append(el('div', 'pl-d', note));
+    return t;
+  }
+  dash.draw('today-sub', (e) => {
+    const g = dash.data('today'); if (g.status !== 'ok') { e.textContent = g.status === 'error' ? (g.message || 'Не удалось получить данные') : 'Загружаю данные из Odoo…'; return; }
+    const d = g.data; const at = d.fetched_at ? new Date(d.fetched_at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
+    e.textContent = 'На ' + dayRu(d.today) + ' ' + d.today.slice(0, 4) + '. Движения, деньги и счета — с 1 ' + RMG[+d.today.slice(5, 7) - 1] + '. Данные получены ' + at + '.' + (d.error ? ' ' + d.error : '');
+  });
+  dash.draw('today-tiles', (e) => {
+    const g = dash.data('today'); if (g.status !== 'ok' || !g.data.mrr) { e.replaceChildren(); return; }
+    const d = g.data, P = ['SFA', 'POS'], s = (o) => P.reduce((a, p) => a + (o && o[p] || 0), 0);
+    const pe = 'к ' + d.prev_end.slice(8, 10) + '.' + d.prev_end.slice(5, 7), lc = d.last_cut ? 'к срезу ' + d.last_cut.slice(8, 10) + '.' + d.last_cut.slice(5, 7) : '';
+    const mv = (et) => s(d.mov[et] || {}), net = mv('0_creation') + mv('1_expansion') + mv('15_contraction') + mv('2_churn');
+    const ch = (a, b) => ({v: a - b, pct: b ? a / b - 1 : null});
+    const subsNow = s(d.subs);
+    const ps = '1–' + (+d.prev_same.slice(8, 10)) + ' ' + RMG[+d.prev_same.slice(5, 7) - 1];
+    e.replaceChildren(
+      ttile('MRR', s(d.mrr), 'm', Object.assign(ch(s(d.mrr), s(d.mrr_prev)), {text: pe}), 'm', null, 'up', 'ВСЕГО'),
+      ttile('MRR', d.mrr.SFA, 'm', Object.assign(ch(d.mrr.SFA, d.mrr_prev.SFA), {text: pe}), 'm', null, 'up', 'SFA'),
+      ttile('MRR', d.mrr.POS, 'm', Object.assign(ch(d.mrr.POS, d.mrr_prev.POS), {text: pe}), 'm', null, 'up', 'POS'),
+      ttile('Подписок в базе', subsNow, 'n', d.last_subs != null ? Object.assign(ch(subsNow, d.last_subs), {text: lc}) : null, 'n', 'SFA ' + d.subs.SFA + ' · POS ' + d.subs.POS, 'up'),
+      ttile('Клиентов', d.clients, 'n', d.last_clients != null ? Object.assign(ch(d.clients, d.last_clients), {text: lc}) : null, 'n', null, 'up'),
+      ttile('Изменение MRR с 1-го числа', sgn(net, 'm'), 'm', null, 'm', 'новые ' + sgn(mv('0_creation'), 'm') + ' · расширения ' + sgn(mv('1_expansion'), 'm') + ' · сокращения ' + sgn(mv('15_contraction'), 'm') + ' · отток ' + sgn(mv('2_churn'), 'm'), 'up'),
+      ttile('Поступило денег с 1-го числа', d.cash_in, 'm', Object.assign(ch(d.cash_in, d.cash_in_prev), {text: 'к ' + ps}), 'm', 'комиссии Payme / Click / Paynet ' + fmt(d.cash_comm, 'm'), 'up'),
+      ttile('Выставлено счетов с 1-го числа', d.inv, 'm', Object.assign(ch(d.inv, d.inv_prev), {text: 'к ' + ps}), 'm', null, 'up'));
+  });
+
   const one = (name, key, f) => dash.draw(name, (e) => { const M = rowsOf('metrics'); if (!M) return dash0(e); const r = M.find((x) => x.cut === curCut(M) && x.key === key); e.textContent = r ? f(r) : '—'; });
   one('h-mrr', 'mrr_total', (r) => fmt(r.value, 'm') + ' сум'); one('h-chg', 'mrr_total', (r) => fmtD(r)); one('h-sfa', 'mrr_sfa', (r) => fmt(r.value, 'm')); one('h-pos', 'mrr_pos', (r) => fmt(r.value, 'm'));
   dash.draw('cutlabel', (e) => { const M = rowsOf('metrics'); e.textContent = M ? ru(curCut(M)) : '—'; });

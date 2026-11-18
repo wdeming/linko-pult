@@ -11,6 +11,6 @@ window.dash = (() => {
     draw: (name, f) => { if (f) { draws[name] = f; return; } document.querySelectorAll('[data-draw="' + name + '"]').forEach((el) => { if (draws[name] && visible(el)) draws[name](el); }); },
     params: () => params, setParams: (p) => { Object.assign(params, p); run(); }, resetParams: () => { params.cut = ''; run(); },
     setLink: (n) => { history.replaceState(null, '', '#' + n); },
-    _set: (id, rows) => { D[id] = {status: 'ok', data: rows}; }, _run: run,
+    _set: (id, rows) => { D[id] = rows == null ? {status: 'loading', data: []} : {status: 'ok', data: rows}; }, _setErr: (id, msg) => { D[id] = {status: 'error', data: [], message: msg}; }, _run: run,
   };
 })();

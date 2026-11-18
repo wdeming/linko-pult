@@ -102,6 +102,29 @@ def api_refresh():
     with db() as c: rid = c.execute("insert into run(started, state, cut, docs, msg, who) values(?,?,?,?,?,?)", (now(), 'running', cut, docs, 'Пересборка запущена', session.get('u'))).lastrowid
     threading.Thread(target=work, args=(rid, cut, docs), daemon=True).start()
     return jsonify(ok=True, run=rid)
+TODAY = {'at': 0, 'data': None, 'err': None}
+TLOCK = threading.Lock()
+@app.route('/api/today')
+def api_today():
+    import time
+    force = request.args.get('force') == '1'
+    with TLOCK:
+        if force or not TODAY['data'] or time.time() - TODAY['at'] > 600:
+            try:
+                r = subprocess.run([sys.executable, os.path.join('pult', 'today.py')], cwd=CALC, capture_output=True, text=True, timeout=90, env=dict(os.environ, PYTHONIOENCODING='utf-8'))
+                if r.returncode != 0: raise RuntimeError((r.stderr or r.stdout)[-300:])
+                TODAY.update(at=time.time(), data=json.loads(r.stdout), err=None)
+            except Exception as e:
+                TODAY['err'] = 'Не удалось получить данные из Odoo: ' + re.sub(r'password=\S+', 'password=***', str(e))[-200:]
+        d = dict(TODAY['data'] or {})
+    with db() as c:
+        row = c.execute('select cut, metrics from cutdata order by cut desc limit 1').fetchone()
+    if row:
+        last = {m['key']: m['value'] for m in json.loads(row['metrics'])}
+        d['last_cut'] = row['cut']; d['last_subs'] = last.get('subs'); d['last_clients'] = last.get('clients')
+    d['fetched_at'] = datetime.datetime.fromtimestamp(TODAY['at'], datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if TODAY['at'] else None
+    d['error'] = TODAY['err']
+    return jsonify(d)
 @app.route('/api/history')
 def api_history():
     with db() as c: rows = c.execute('select id, started, finished, state, cut, docs, msg, who from run order by id desc limit 50').fetchall()

@@ -13,6 +13,16 @@
   }
   function poll() { lastState = 'running'; if (!timer) timer = setInterval(tick, 3000); tick(); }
   window.pultPoll = poll;
+  async function loadToday(force) {
+    const btn = document.getElementById('today-refresh'); if (btn) btn.disabled = true;
+    if (force) { dash._set('today', null); }
+    try { const r = await fetch('/api/today' + (force ? '?force=1' : '')); if (r.status === 401) { location.href = '/login'; return; }
+      const j = await r.json(); if (j.mrr) dash._set('today', j); else dash._setErr('today', j.error || 'Нет данных');
+    } catch (e) { dash._setErr('today', 'Не удалось получить данные из Odoo'); }
+    if (btn) btn.disabled = false; dash.draw('today-sub'); dash.draw('today-tiles');
+  }
+  document.getElementById('today-refresh')?.addEventListener('click', () => loadToday(true));
+  loadToday(false);
   new MutationObserver((ms) => { if (ms.some((m) => m.target.classList && m.target.classList.contains('pl-doc'))) dash._run(); }).observe(document.getElementById('dash-root'), {attributes: true, attributeFilter: ['hidden'], subtree: true});
   let rz = null; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => dash._run(), 150); });
   load().catch((e) => console.error(e));

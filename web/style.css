@@ -101,3 +101,11 @@ a.pl-btn{text-decoration:none;display:inline-block}
 .pl-ttip{position:fixed;z-index:50;max-width:min(340px,calc(100vw - 16px));white-space:normal}
 .pl-ttip b{white-space:normal}
 .pl-tiphint{color:var(--color-fg-muted);margin-top:2px}
+.pl-top{align-items:center}
+.pl-today{display:flex;flex-direction:column;gap:var(--cds-gap-sm);padding:var(--cds-pad-lg);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:color-mix(in srgb,var(--color-panel) 70%,transparent)}
+.pl-todayhead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:var(--cds-gap-sm)}
+.pl-today .pl-hero{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.pl-today .pl-tile .pl-d+.pl-d{color:var(--color-fg-muted)}
+.pl-cutbar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:var(--cds-gap-md);padding-top:var(--cds-gap-sm);border-top:1px solid var(--color-border-line)}
+.pl-today .pl-hero{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:900px){.pl-today .pl-hero{grid-template-columns:repeat(2,minmax(0,1fr))}}
