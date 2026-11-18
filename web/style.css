@@ -92,3 +92,12 @@ a.pl-btn{text-decoration:none;display:inline-block}
 .pl-tbl .pl-tot{font-weight:var(--cds-font-weight-medium);background:color-mix(in srgb,var(--color-fg) 4%,transparent)}
 .pl-tbl th.pl-tot{background:var(--color-panel)}
 .pl-tbl .pl-totrow td{font-weight:var(--cds-font-weight-medium);border-top:2px solid var(--color-border-line);border-bottom:0}
+.pl-tl{align-items:flex-start}
+.pl-tl span:first-child{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.3}
+.pl-chip{margin-top:1px}
+.pl-chip.all{border-color:var(--color-fg-muted);color:var(--color-fg)}
+.pl-tile{cursor:default}
+.pl-tile:focus-visible{outline:2px solid var(--color-fg);outline-offset:2px}
+.pl-ttip{position:fixed;z-index:50;max-width:min(340px,calc(100vw - 16px));white-space:normal}
+.pl-ttip b{white-space:normal}
+.pl-tiphint{color:var(--color-fg-muted);margin-top:2px}

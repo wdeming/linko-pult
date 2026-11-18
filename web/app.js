@@ -47,13 +47,36 @@
     v.forEach((r) => svg.append('circle').attr('cx', x(r.cut)).attr('cy', y(r.value)).attr('r', r.cut === cut ? 2.6 : 1.4).style('fill', r.cut === cut ? 'var(--color-fg)' : 'var(--cds-chart-axis)'));
     return svg.node();
   }
+  const tileTip = el('div', 'pl-tip pl-ttip'); tileTip.hidden = true;
+  (document.querySelector('.pl') || document.body).append(tileTip);
+  function showTileTip(ev, r, M) {
+    const rows = M.filter((x) => x.key === r.key).sort((a, b) => a.cut < b.cut ? -1 : 1);
+    tileTip.replaceChildren(el('b', '', r.label));
+    rows.forEach((x) => { const d = el('div', 'pl-tipr' + (x.cut === r.cut ? ' pl-tiptot' : '')); d.append(el('i'), el('span', '', 'на ' + ru(x.cut)), el('span', 'pl-tipv', fmt(x.value, x.kind))); tileTip.append(d); });
+    if (r.delta != null) { const d = el('div', 'pl-tipr'); d.append(el('i'), el('span', '', 'Изменение к прошлому срезу'), el('span', 'pl-tipv pl-d ' + tone(r), fmtD(r))); tileTip.append(d); }
+    if (r.good) tileTip.append(el('div', 'pl-tiphint', r.good === 'up' ? 'Рост — хорошо, снижение — плохо' : 'Снижение — хорошо, рост — плохо'));
+    tileTip.hidden = false;
+    const w = tileTip.offsetWidth, h = tileTip.offsetHeight, vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    let x = ev.clientX + 14, y = ev.clientY + 14; if (x + w > vw - 8) x = Math.max(8, ev.clientX - w - 14); if (y + h > vh - 8) y = Math.max(8, ev.clientY - h - 14);
+    tileTip.style.left = x + 'px'; tileTip.style.top = y + 'px';
+  }
+  const hideTileTip = () => { tileTip.hidden = true; };
+  window.addEventListener('scroll', hideTileTip, {passive: true});
   function tile(r, M, prevCut) {
     const t = el('div', 'pl-tile ' + tone(r)), l = el('div', 'pl-tl');
-    l.append(el('span', '', r.prod ? r.label.replace(/, (SFA|POS)$/, '') : r.label));
+    const tot = / всего$/.test(r.label);
+    l.append(el('span', '', r.prod ? r.label.replace(/, (SFA|POS)$/, '') : r.label.replace(/, всего$/, '')));
     if (r.prod) l.append(el('span', 'pl-chip ' + r.prod.toLowerCase(), r.prod));
+    else if (tot) l.append(el('span', 'pl-chip all', 'ВСЕГО'));
     const row = el('div', 'pl-tr');
     row.append(el('span', 'pl-d ' + tone(r), fmtD(r) + (prevCut && r.delta != null ? ' к ' + prevCut : '')), spark(M.filter((x) => x.key === r.key), r.cut));
     t.append(l, el('div', 'pl-tv', fmt(r.value, r.kind)), row);
+    t.tabIndex = 0;
+    t.addEventListener('pointerenter', (ev) => showTileTip(ev, r, M));
+    t.addEventListener('pointermove', (ev) => { if (ev.pointerType === 'mouse') showTileTip(ev, r, M); });
+    t.addEventListener('pointerleave', hideTileTip);
+    t.addEventListener('focus', () => { const b = t.getBoundingClientRect(); showTileTip({clientX: b.left, clientY: b.bottom}, r, M); });
+    t.addEventListener('blur', hideTileTip);
     return t;
   }
   function tiles(e, keysOrDoc) {
