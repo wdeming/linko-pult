@@ -98,6 +98,15 @@ def api_refresh():
     if not m or int(m.group(2)) != calendar.monthrange(2026, int(m.group(1)))[1]: return jsonify(error='Срез должен быть концом месяца 2026 года, начиная с августа'), 400
     if cut >= datetime.date.today().isoformat(): return jsonify(error='Этот месяц ещё не закончился'), 400
     if not docs or any(d not in DOCS for d in docs.split(',')): return jsonify(error='Неизвестный документ'), 400
+    with db() as c:
+        have = [r[0] for r in c.execute('select cut from cutdata order by cut')]
+    if j.get('new'):
+        if cut in have: return jsonify(error='Срез на %s уже собран. Чтобы пересчитать его, выберите срез и нажмите «Обновить всё».' % cut), 409
+        if have:
+            ly, lm = int(have[-1][:4]), int(have[-1][5:7]); ny, nm = (ly + 1, 1) if lm == 12 else (ly, lm + 1)
+            if cut != '%04d-%02d-%02d' % (ny, nm, calendar.monthrange(ny, nm)[1]): return jsonify(error='Новым может быть только следующий месяц после последнего среза (%s).' % have[-1]), 400
+    elif cut not in have:
+        return jsonify(error='Такого среза ещё нет. Новый месяц собирается кнопкой «Собрать новый месяц».'), 400
     if not LOCK.acquire(blocking=False): return jsonify(error='Пересборка уже идёт, дождитесь окончания'), 409
     with db() as c: rid = c.execute("insert into run(started, state, cut, docs, msg, who) values(?,?,?,?,?,?)", (now(), 'running', cut, docs, 'Пересборка запущена', session.get('u'))).lastrowid
     threading.Thread(target=work, args=(rid, cut, docs), daemon=True).start()

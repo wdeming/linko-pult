@@ -248,21 +248,32 @@
     const M = rowsOf('metrics'); if (!M) return;
     window.location.href = '/api/file?cut=' + curCut(M) + '&doc=' + doc;
   }
-  async function refresh(doc) {
-    const M = rowsOf('metrics'); if (!M) return;
-    let cut = curCut(M);
-    if (doc === 'new') {
-      const cs = cutsOf(M), l = cs[cs.length - 1], next = new Date(Date.UTC(+l.slice(0, 4), +l.slice(5, 7) + 1, 0)).toISOString().slice(0, 10);
-      if (next >= new Date().toISOString().slice(0, 10)) return say('Следующий срез — ' + ru(next) + '. Его можно собрать после окончания месяца; надёжным он станет примерно через три недели.');
-      cut = next; doc = 'all';
-    }
+  const RMN = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+  const confirmBox = document.getElementById('new-confirm'), confirmText = document.getElementById('new-confirm-text');
+  let pendingNew = null;
+  async function post(cut, docs, isNew) {
     say('Запускаю пересборку…');
     try {
-      const r = await fetch('/api/refresh', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cut, docs: doc})});
+      const r = await fetch('/api/refresh', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cut, docs, new: !!isNew})});
       const j = await r.json(); if (!r.ok) throw new Error(j.error || 'ошибка сервера');
-      say('Пересборка запущена, обычно это меньше минуты.'); if (window.pultPoll) window.pultPoll();
-    } catch (err) { say('Не удалось запустить пересборку: ' + err.message); }
+      say(isNew ? 'Собираю срез на ' + ru(cut) + ', обычно это меньше минуты.' : 'Пересборка запущена, обычно это меньше минуты.'); if (window.pultPoll) window.pultPoll();
+    } catch (err) { say(err.message); }
   }
+  function refresh(doc) {
+    const M = rowsOf('metrics'); if (!M) return;
+    if (doc !== 'new') { if (confirmBox) confirmBox.hidden = true; return post(curCut(M), doc, false); }
+    const cs = cutsOf(M), l = cs[cs.length - 1], ny = +l.slice(0, 4) + (l.slice(5, 7) === '12' ? 1 : 0), nm = l.slice(5, 7) === '12' ? 1 : +l.slice(5, 7) + 1;
+    const next = new Date(Date.UTC(ny, nm, 0)).toISOString().slice(0, 10), today = new Date().toISOString().slice(0, 10);
+    if (cs.includes(next)) return say('Срез на ' + ru(next) + ' уже собран. Чтобы пересчитать его, выберите срез и нажмите «Обновить всё».');
+    if (next >= today) return say('Последний срез — ' + ru(l) + '. Следующий, на ' + ru(next) + ', можно собрать только после окончания месяца, с ' + ru(new Date(Date.UTC(ny, nm, 1)).toISOString().slice(0, 10)) + '.');
+    const days = Math.round((Date.parse(today) - Date.parse(next)) / 864e5);
+    pendingNew = next;
+    if (confirmText) confirmText.textContent = 'Будет собран новый срез: ' + RMN[nm - 1] + ' ' + ny + ' (на ' + ru(next) + '), все документы. ' +
+      (days < 21 ? 'Месяц закончился ' + days + ' дн. назад: часть закрытых подписок ещё могут вернуть в работу, поэтому отток может оказаться завышен. Срез можно будет пересчитать позже кнопкой «Обновить всё».' : '');
+    if (confirmBox) confirmBox.hidden = false; say('');
+  }
+  document.getElementById('new-go')?.addEventListener('click', () => { if (confirmBox) confirmBox.hidden = true; if (pendingNew) post(pendingNew, 'all', true); pendingNew = null; });
+  document.getElementById('new-cancel')?.addEventListener('click', () => { if (confirmBox) confirmBox.hidden = true; pendingNew = null; say(''); });
   document.querySelectorAll('[data-dl]').forEach((b) => b.addEventListener('click', () => download(b.dataset.dl)));
   document.querySelectorAll('[data-rf]').forEach((b) => b.addEventListener('click', () => refresh(b.dataset.rf)));
   dash.onData(() => {
