@@ -96,9 +96,20 @@ ws3['B24'] = 'Восстановлена из журнала изменений 
 fn = OUTP('Обзвоны_клиентов_сырая_выгрузка_Odoo_%s.xlsx' % SUF)
 wb.save(fn)
 import collections
+def extra():
+    """Охват базы, открытые проблемы, операторы, оценки — для пульта."""
+    pid = json.load(open(J('calls_pid'))); base = json.load(open(J('base'), encoding='utf-8'))
+    bp = {b['partner_id'] for b in base}; c90 = (dt.date.fromisoformat(CUT) - dt.timedelta(days=90)).isoformat()
+    reached = {pid.get(str(x[0])) for x in rows if x[1] and c90 < x[1] <= CUT and x[8] in ('Всё ок', 'Проблема')} & bp
+    tried = {pid.get(str(x[0])) for x in rows if x[1] and c90 < x[1] <= CUT} & bp
+    openp = [x for x in rows if x[8] == 'Проблема' and x[14] not in ('Решено', 'Отмена')]
+    ops = collections.Counter(x[21] or 'не указан' for x in rows if x[2] == LAST_M)
+    sc = [x[17] for x in rows if x[17] and x[1] and x[1] <= CUT]
+    return {'base_clients': len(bp), 'reached90': len(reached), 'tried90': len(tried), 'open_problems': len(openp),
+            'open_by_route': collections.Counter(x[11] or 'не направлена' for x in openp), 'ops': ops, 'scored': len(sc), 'scored_month': sum(1 for x in rows if x[17] and x[2] == LAST_M)}
 res = collections.Counter((x[2], x[8]) for x in rows)
 bym = {mm: {k: res.get((mm, k), 0) for k in ('Всё ок', 'Проблема', 'Не дозвонились', 'Нет данных')} for mm in allm}
 json.dump({'N': N, 'bym': bym, 'route': collections.Counter(x[11] for x in rows if x[11]), 'stage': collections.Counter(x[14] or '-' for x in rows),
-           'prod': collections.Counter(x[5] for x in rows)}, open(J('res_calls'), 'w'), ensure_ascii=False)
+           'prod': collections.Counter(x[5] for x in rows), **extra()}, open(J('res_calls'), 'w'), ensure_ascii=False)
 print(fn, N, LAST, 'месяцев', len(allm))
 for mm in allm[-4:]: print(mm, bym[mm])

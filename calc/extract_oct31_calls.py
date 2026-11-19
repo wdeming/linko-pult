@@ -36,7 +36,7 @@ select n.id, n.x_studio_date d, coalesce(rp.complete_name, rp.name) partner, coa
   up.name resp, coalesce(hd.name->>'ru_RU', hd.name->>'en_US') resp_dep,
   sn.x_name->>'ru_RU' stage, n.x_studio_selection_field_8r5_1j56e5rdi st2, n.x_studio_cancel_reason cr,
   n.x_studio_ball ball, n.x_studio_problem problem, n.x_studio_comment comment, n.x_studio_action action,
-  cp.name creator, n.create_date::date cd, n.write_date::date wd,
+  cp.name creator, n.x_studio_paertner pid, n.create_date::date cd, n.write_date::date wd,
   coalesce(nullif(n.x_studio_phone,''), nullif(n.x_studio_no_client_phone,'')) phone, n.x_active act
 from x_nps n
 left join res_partner rp on rp.id=n.x_studio_paertner
@@ -74,4 +74,5 @@ for r in rows:
         str(cl) if cl else None, str(r['wd']) if r['wd'] else None, days,
         ('***' + ph[-4:]) if len(ph) >= 4 else None, 'да' if r['act'] else 'нет'])
 json.dump(out, open(J('calls'), 'w'), ensure_ascii=False)
+json.dump({str(r['id']): r['pid'] for r in rows if r['pid']}, open(J('calls_pid'), 'w'))
 print('записей', len(out), '| без даты', sum(1 for o in out if not o[1]), '| период', out[0][1], '—', max(o[1] for o in out if o[1]))

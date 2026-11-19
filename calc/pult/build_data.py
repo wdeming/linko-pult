@@ -40,6 +40,13 @@ for cut in cuts:
     tm = R['MRR'][PP] + R['MRR'][F]; tmj = tm
     # --- сводка и MRR
     add('mrr', 'mrr_total', 'MRR всего', tm, 'm', 'up'); add('mrr', 'mrr_sfa', 'MRR SFA', R['MRR'][F], 'm', 'up', F); add('mrr', 'mrr_pos', 'MRR POS', R['MRR'][PP], 'm', 'up', PP)
+    _sp = const['SPLIT']
+    add('mrr', 'mrr_paused', 'в т.ч. MRR подписок на паузе (входит в MRR всего)', _sp[PP]['4_paused'][1] + _sp[F]['4_paused'][1], 'm', '')
+    add('mrr', 'subs_paused', 'в т.ч. подписок на паузе (входят в базу)', _sp[PP]['4_paused'][0] + _sp[F]['4_paused'][0], 'n', '')
+    STRU = {'3_progress': 'в работе', '4_paused': 'на паузе', '6_churn': 'закрыта', '5_renewed': 'продлена', '1_draft': 'черновик', '2_renewal': 'продление', '7_upsell': 'допродажа'}
+    for e in sorted(const.get('JERR') or [], key=lambda e: -abs(e['log'] - e['sub'])):
+        lab = '%s · %s' % (e['name'], STRU.get(e['st'], e['st'] or ''))
+        ser('mrr_jerr', lab, 'По подписке', e['sub']); ser('mrr_jerr', lab, 'В журнале Odoo', e['log']); ser('mrr_jerr', lab, 'Разница', e['log'] - e['sub'])
     add('mrr', 'subs', 'Подписок в базе', len(base), 'n', 'up'); add('mrr', 'subs_sfa', 'Подписок SFA', R['SRV'][F], 'n', 'up', F); add('mrr', 'subs_pos', 'Подписок POS', R['SRV'][PP], 'n', 'up', PP)
     # потоки MRR: всего, SFA, POS
     for key, lab, e, sign, good in (('new', 'Новые продажи за месяц', '0_creation', 1, 'up'), ('exp', 'Расширения за месяц', '1_expansion', 1, 'up'),
@@ -101,6 +108,9 @@ for cut in cuts:
     sp = const['SPLIT']; add('clients', 'paused_n', 'Подписок на паузе', sp[PP]['4_paused'][0] + sp[F]['4_paused'][0], 'n', 'down'); add('clients', 'paused_mrr', 'MRR на паузе', sp[PP]['4_paused'][1] + sp[F]['4_paused'][1], 'm', 'down')
     add('clients', 'lic_sfa', 'Лицензий SFA', R['LIC'][F], 'n', 'up', F); add('clients', 'lic_pos', 'Лицензий POS', R['LIC'][PP], 'n', 'up', PP)
     for s, v in seg.items(): ser('seg_clients', s, 'Клиентов', v[0]); ser('seg_mrr', s, 'MRR', v[1])
+    jout = sum((const.get('MRR_JOUT') or {}).values())
+    if abs(jout) > 1: ser('seg_mrr', 'Расхождения журнала Odoo', 'MRR', jout)
+    add('clients', 'cl_mrr', 'MRR клиентов всего (по журналу Odoo)', tm, 'm', 'up')
     mu = [c for c in cl.values() if c['n'] >= 2]; mm = sum(c['mrr'] for c in mu)
     add('multi', 'mu_clients', 'Клиентов с 2+ подписками', len(mu), 'n', 'up'); add('multi', 'mu_subs', 'Подписок у них', sum(c['n'] for c in mu), 'n', 'up'); add('multi', 'mu_mrr', 'MRR этих клиентов', mm, 'm', 'up'); add('multi', 'mu_share', 'Доля в MRR базы', mm / tm, 'p', '')
     for c in sorted(mu, key=lambda c: -c['mrr'])[:12]: ser('multi_top', c['name'][:28], 'MRR', c['mrr'])
@@ -116,10 +126,17 @@ for cut in cuts:
     # --- себестоимость
     ct = K['COGS'][PP] + K['COGS'][F]
     add('cost', 'cost_total', 'Себестоимость в месяц', ct, 'm', 'down'); add('cost', 'cost_pct', 'Себестоимость, % от MRR', ct / tmj, 'p', 'down'); add('cost', 'cost_sfa', 'На SFA', K['COGS'][F], 'm', 'down', F); add('cost', 'cost_pos', 'На POS', K['COGS'][PP], 'm', 'down', PP)
-    for k, nm in (('SUP', 'Техподдержка'), ('ONP', 'Onboarding POS'), ('ONS', 'Onboarding SFA'), ('KA', 'Ключевые клиенты'), ('HOST_AVG', 'Хостинг (среднее)')):
-        add('cost', 'c_' + k, nm, K[k], 'm', 'down'); ser('cost_parts', nm, 'Сумма в месяц', K[k])
-    add('cost', 'host_m', 'Оплаты хостинга за месяц', K['HOST_M'].get(m), 'm', 'down')
-    for mmm, v in K['HOST_M'].items(): ser('hosting', ml(mmm), 'Оплаты хостинга', v)
+    CP = (('SUP', 'Техподдержка'), ('ONP', 'Onboarding POS'), ('ONS', 'Onboarding SFA'), ('KA', 'Ключевые клиенты'), ('HOST_AVG', 'Хостинг'))
+    for k, nm in CP:
+        add('cost', 'c_' + k, nm + ' за месяц', K[k], 'm', 'down'); ser('cost_parts', nm, 'За месяц', K[k])
+    add('cost', 'host_m', 'Оплаты хостинга за месяц (по дате оплаты)', (K.get('HOST_PAY_M') or K['HOST_M']).get(m), 'm', 'down')
+    for mmm, v in K['HOST_M'].items():
+        ser('hosting', ml(mmm), 'За период (в себестоимости)', v)
+        if K.get('HOST_PAY_M'): ser('hosting', ml(mmm), 'По дате оплаты', K['HOST_PAY_M'].get(mmm, 0))
+    if K.get('FOT_M'):
+        for mmm in K['HOST_M']:
+            for k, nm in CP[:4]: ser('cost_m', ml(mmm), nm, K['FOT_M'][k].get(mmm, 0))
+            ser('cost_m', ml(mmm), 'Хостинг', K['HOST_M'][mmm])
     # --- ключевые метрики
     for lab, k, kind, good in (('ARPA', 'ARPA', 'm', 'up'), ('Gross Margin по подписке', 'GM_SUB', 'p', 'up'), ('Отток по деньгам в месяц', 'CH_CLOSED', 'p', 'down'), ('Срок жизни, мес', 'LIFE', 'd1', 'up'),
                                 ('LTV', 'LTV', 'm', 'up'), ('CAC с внедрением', 'CAC', 'm', 'down'), ('LTV : CAC', 'LTVCAC', 'd2', 'up'), ('Payback, мес', 'PAYBACK', 'd1', 'down')):
@@ -132,6 +149,13 @@ for cut in cuts:
     add('calls', 'calls_share', 'Доля проблемных', b.get('Проблема', 0) / n, 'p', 'down'); add('calls', 'calls_cum', 'Записей накопленно', calls['N'], 'n', '')
     for mmm, v in calls['bym'].items():
         for k in ('Всё ок', 'Проблема', 'Не дозвонились'): ser('calls_m', ml(mmm), k, v.get(k, 0))
+    if 'base_clients' in calls:
+        add('calls', 'calls_cov', 'Клиентов базы, с кем поговорили за 90 дней', calls['reached90'] / calls['base_clients'] if calls['base_clients'] else None, 'p', 'up')
+        add('calls', 'calls_cov_n', 'Поговорили за 90 дней, клиентов', calls['reached90'], 'n', 'up')
+        add('calls', 'calls_open', 'Проблем из обзвонов не решено', calls['open_problems'], 'n', 'down')
+        add('calls', 'calls_scored', 'Звонков с оценкой клиента (для NPS) за месяц', calls['scored_month'], 'n', 'up')
+        for k2, v in sorted(calls['ops'].items(), key=lambda z: -z[1]): ser('calls_ops', k2[:30], 'Звонков за месяц', v)
+        for k2, v in sorted(calls['open_by_route'].items(), key=lambda z: -z[1]): ser('calls_open', k2[:40], 'Не решено', v)
     # --- поступления денег
     cp = os.path.join(dn, 'x_%s_res_cash.json' % t)
     if os.path.exists(cp):
@@ -179,7 +203,11 @@ for cut in cuts:
     # --- оргструктура
     add('org', 'staff', 'Штат, человек', sum(x['n'] for x in fot), 'n', ''); add('org', 'payroll', 'Оклады на руки в месяц', sum(x['sal'] for x in fot), 'm', 'down')
     add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tmj, 'p', 'down')
-    for x in fot: ser('staff_dep', (x['dep'] or '—')[:30], 'Человек', x['n']); ser('payroll_dep', (x['dep'] or '—')[:30], 'Оклады', x['sal'])
+    gone = sum(x.get('gone', 0) for x in fot)
+    add('org', 'staff_gone', 'Из них уволены после среза (на сегодня)', gone, 'n', ''); add('org', 'staff_now', 'Из этого штата работают сегодня', sum(x['n'] for x in fot) - gone, 'n', '')
+    for x in fot:
+        ser('staff_dep', (x['dep'] or '—')[:30], 'На срез', x['n']); ser('payroll_dep', (x['dep'] or '—')[:30], 'Оклады', x['sal'])
+        if 'gone' in x: ser('staff_dep', (x['dep'] or '—')[:30], 'Уволены после среза', x['gone']); ser('staff_dep', (x['dep'] or '—')[:30], 'Работают сегодня', x['n'] - x['gone'])
     # --- выручка и долги (из файлов комплекта, обновляются вручную)
     rv = revenue(cut, ddmm, per)
     if rv:

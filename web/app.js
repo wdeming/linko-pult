@@ -2,13 +2,13 @@
   const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts'];
   // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
   const CH = {
-    mrr_end: ['stack', 'm', {row: 'Итого MRR'}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
+    mrr_end: ['stack', 'm', {row: 'Итого MRR'}], mrr_jerr: ['hbar', 'm', {col: true}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
     retention: ['line', 'p', {}], survival: ['line', 'p', {}],
     churn_closed: ['stack', 'n', {row: 'Всего', col: true}], churn_new: ['stack', 'n', {row: 'Всего', col: true}], churn_pct: ['line', 'p', {}],
     churn_cats: ['hbar', 'p', {col: true}], seg_clients: ['hbar', 'n', {col: true}], seg_mrr: ['hbar', 'm', {col: true}], multi_top: ['hbar', 'm', {col: 'Итого по показанным'}],
     top_share: ['hbar', 'p', {}], top_clients: ['hbar', 'm', {col: 'Итого топ-20'}], revenue_m: ['stack', 'm', {row: 'Всего', col: true}],
-    cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['stack', 'm', {col: true}], unit: ['group', 'm', {}],
-    staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}],
+    cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['group', 'm', {col: true}], cost_m: ['stack', 'm', {row: 'Себестоимость всего', col: true}], unit: ['group', 'm', {}],
+    staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}], calls_ops: ['hbar', 'n', {col: true}], calls_open: ['hbar', 'n', {col: true}],
     cash_prod: ['stack', 'm', {row: 'Поступило всего', col: true}], cash_meth: ['stack', 'm', {row: 'Всего', col: true}], cash_comm: ['stack', 'm', {col: true}],
     exp_cash: ['stack', 'm', {row: 'Всего', col: true}], exp_period: ['stack', 'm', {row: 'Всего', col: true}], exp_flow: ['group', 'm', {col: true}], exp_cat: ['hbar', 'm', {col: true}]};
   const view = {}; let msgText = '';
@@ -232,10 +232,14 @@
     sel.onchange = () => dash.setParams({cut: sel.value});
   });
   const last = () => { const s = rowsOf('status'); return s ? s.find((r) => r.id === 'last') : null; };
+  const DOCRU = {all: 'все документы', mrr: 'MRR', churn: 'отток', clients: 'клиенты', multi: 'мультиподписки', top20: 'концентрация', cost: 'себестоимость', metrics: 'юнит-экономика', calls: 'обзвоны', org: 'штат', cash: 'поступления', exp: 'расходы'};
   dash.draw('status', (e) => {
-    const r = last(), when = r && r.at ? new Date(r.at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
-    const what = r ? ' Срез ' + (r.cut || '') + ', документы: ' + (r.docs === 'all' ? 'все' : (r.docs || '')) + '.' : '';
-    e.textContent = !r ? 'Данные загружены.' : r.state === 'done' ? 'Данные обновлены ' + when + '.' + what : r.state === 'error' ? 'Пересборка не удалась (' + when + '): ' + (r.msg || '') : r.state === 'running' ? 'Идёт пересборка, начата ' + when + '.' + what : 'Запрос на пересборку отправлен ' + when + '.' + what;
+    const r = last(), M = rowsOf('metrics'), ms = rowsOf('measured') || [], cut = M && M.length ? curCut(M) : null;
+    const t = (x) => x ? new Date(x).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
+    if (r && r.state === 'running') { e.textContent = 'Идёт пересборка (срез ' + ru((r.cut || '').split(',')[0]) + ', ' + (r.docs || '').split(',').map((d) => DOCRU[d] || d).join(', ') + '), начата ' + t(r.at) + '.'; return; }
+    if (r && r.state === 'error') { e.textContent = 'Последняя пересборка не удалась (' + t(r.at) + '): ' + (r.msg || ''); return; }
+    const m = cut && ms.find((x) => x.cut === cut);
+    e.textContent = cut ? 'Данные среза на ' + ru(cut) + (m && m.at ? ' последний раз обновлены ' + t(m.at) + '.' : '.') : 'Данные загружены.';
   });
   dash.draw('lamp', (e) => { const r = last(); e.className = 'pl-lamp ' + (!r || r.state === 'done' ? 'ok' : r.state === 'error' ? 'bad' : 'run'); });
   dash.draw('msg', (e) => { e.textContent = msgText; });

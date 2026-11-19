@@ -2,7 +2,7 @@
   let timer = null, lastState = null;
   async function load() {
     const r = await fetch('/api/data'); if (r.status === 401) { location.href = '/login'; return; }
-    const j = await r.json(); dash._set('metrics', j.metrics); dash._set('series', j.series); dash._set('status', j.status ? [j.status] : []); dash._set('bundles', []);
+    const j = await r.json(); dash._set('metrics', j.metrics); dash._set('series', j.series); dash._set('status', j.status ? [j.status] : []); dash._set('bundles', []); dash._set('measured', Object.entries(j.measured || {}).map(([cut, at]) => ({cut, at})));
     lastState = j.status ? j.status.state : null; dash._run();
     if (lastState === 'running') poll();
   }

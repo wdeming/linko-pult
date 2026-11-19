@@ -1,223 +1,148 @@
 # -*- coding: utf-8 -*-
-"""Себестоимость поддержки, внедрения и инфраструктуры — на срез cfg_cut.CUT."""
-import json, collections
+"""Себестоимость поддержки, внедрения, сопровождения ключевых клиентов и инфраструктуры — ФАКТ месяца среза из реестра «Расходы» Odoo.
+ФОТ — по отделам, указанным в строках расходов (оклад, KPI, прочие выплаты за период) + налоги ЗП, распределённые пропорционально выплатам отделов.
+Хостинг — расходы статьи «Хостинг и инфраструктура» за период. Всё по месяцам периода (сумма делится по дням), доллары по 12 000."""
+import json, collections, datetime, calendar
 import openpyxl
+from openpyxl.utils import get_column_letter as L
 from style_lib import *
-
 from cfg_cut import *
-import datetime as _dt
-c = json.load(open(J('const')))
+c = json.load(open(J('const'))); LN = json.load(open(J('exp_lines'), encoding='utf-8')); EX = json.load(open(J('exp'), encoding='utf-8'))
 MRR_POS, MRR_SFA = c['MRR']['POS'], c['MRR']['SFA']
 N_POS_ACT, MRR_POS_ACT = c['SPLIT']['POS']['3_progress']; N_POS_PAUSE, MRR_POS_PAUSE = c['SPLIT']['POS']['4_paused']
 N_SFA_ACT, MRR_SFA_ACT = c['SPLIT']['SFA']['3_progress']; N_SFA_PAUSE, MRR_SFA_PAUSE = c['SPLIT']['SFA']['4_paused']
-
-def prov(note):
-    n = note.lower()
-    for k, v in (('netcup', 'NETCUP (серверы Ритм)'), ('cloudflare', 'Cloudflare'), ('hetzner', 'HETZNER'),
-                 ('serve', 'Servercore'), ('proxima', 'Proxima'), ('exadot', 'Exadot'), ('новый сервер', 'Новый сервер'),
-                 ('ритм', 'Ритм (сервера)'), ('ritm', 'Ритм (сервера)')):
-        if k in n: return v
-    return note[:30] or '—'
-def month_of(d1, d2):
-    """Месяц периода = месяц, на который приходится большая часть дней периода."""
-    a = _dt.date.fromisoformat(d1); b = _dt.date.fromisoformat(d2)
-    if b < a: b = a
-    days = collections.Counter()
-    d = a
-    while d <= b:
-        days[d.strftime('%Y-%m')] += 1; d += _dt.timedelta(days=1)
-    return max(sorted(days), key=lambda m: days[m])
-HOSTING = []
-for h in json.load(open(J('hosting'))):
-    usd = h['lsum'] if h['rate'] > 0 else 0
-    val = h['lsum'] if h['rate'] == 0 else 0
-    HOSTING.append((h['id'], h['pay'], h['d1'], h['d2'], prov(h['note']), usd, h['rate'], val, month_of(h['d1'], h['d2'])))
-HOSTING = [h for h in HOSTING if h[8] <= LAST_M]
-DEPN = {4: 'Отдел тех. поддержки', 13: 'Onboarding POS', 10: 'Onboarding SFA', 12: 'Отдел по работе с ключевыми клиентами'}
-STAFF = {v: [] for v in DEPN.values()}
-for e in sorted(json.load(open(J('staff'))), key=lambda e: (not e['head'], -e['sal'], e['name'])):
-    STAFF[DEPN[e['dep']]].append((e['name'], e['job'], e['sal']))
-NS = {k: len(v) for k, v in STAFF.items()}
-
+D = datetime.date.fromisoformat
+MS = [m for m in MON if m >= '2026-04']                      # помесячный учёт расходов в Odoo — с апреля 2026
+def split(a, d1, d2):
+    a1, b = D(d1), D(d2); n = (b - a1).days + 1; res = collections.defaultdict(float); cur = a1
+    while cur <= b:
+        me = min(b, cur.replace(day=calendar.monthrange(cur.year, cur.month)[1])); res[cur.strftime('%Y-%m')] += a * ((me - cur).days + 1) / n; cur = me + datetime.timedelta(days=1)
+    return res
+DEPS = [(4, 'Отдел тех. поддержки', 'SUP'), (13, 'Onboarding POS', 'ONP'), (10, 'Onboarding SFA', 'ONS'), (12, 'Отдел по работе с ключевыми клиентами', 'KA')]
+PAYK = {'Оклад': 'Оклад', 'KPI': 'KPI', 'Материальная помощь': 'Прочие выплаты'}
+F = collections.defaultdict(float); PAYALL = collections.defaultdict(float); TAX = collections.defaultdict(float)
+for x in LN:
+    if x['plan'] != 'Затраты на персонал': continue
+    for m, v in split(x['amt'], x['d1'], x['d2']).items():
+        if x['cat'] == 'Налоги ЗП': TAX[m] += v
+        elif x['cat'] in PAYK and x['dep_id']:
+            PAYALL[m] += v; F[(x['dep_id'], PAYK[x['cat']], m)] += v
+for did, _, _ in DEPS:
+    for m in MS:
+        pay = sum(F[(did, k, m)] for k in ('Оклад', 'KPI', 'Прочие выплаты'))
+        F[(did, 'Налоги ЗП (доля)', m)] = TAX[m] * pay / PAYALL[m] if PAYALL[m] else 0
+HOST = collections.defaultdict(float); HOSTP = collections.defaultdict(float); HREC = []
+for x in EX:
+    if x['cat'] != 'Хостинг и инфраструктура': continue
+    HOSTP[x['pay'][:7]] += x['amt'] if x['pay'] <= CUT else 0
+    for mm, v in split(x['amt'], x['d1'], x['d2']).items(): HOST[mm] += v
+    if x['d1'][:7] <= LAST_M and x['pay'] >= '2026-03-01': HREC.append(x)
+STAFF = collections.defaultdict(list)
+for e in sorted(json.load(open(J('staff'))), key=lambda e: (not e['head'], -e['sal'], e['name'])): STAFF[e['dep']].append(e)
+NS = {n: len(STAFF[d]) for d, n, _ in DEPS}
 wb = openpyxl.Workbook(); wb.remove(wb.active)
-
-# ============ ФОТ детально ============
-ws = wb.create_sheet("ФОТ детально")
-widths(ws, {'A':5,'B':24,'C':30,'D':40,'E':17,'F':15,'G':17,'H':16,'I':20})
-title(ws, "A1", "ФОТ поддержки, внедрения и сопровождения ключевых клиентов — полная стоимость сотрудников")
-header(ws, 3, ['№','Отдел','Сотрудник','Должность','Оклад на руки, сум/мес','KPI, сум/мес',
-               'Итого выплаты сотруднику','Налог с ФОТ, сум/мес','ПОЛНАЯ СТОИМОСТЬ, сум/мес'])
-BA = "'Базы и допущения'"
-r = 4; totals = {}
-for dept, fill in (('Отдел тех. поддержки', GREEN), ('Onboarding POS', BLUE), ('Onboarding SFA', GREEN), ('Отдел по работе с ключевыми клиентами', GREEN)):
-    start = r
-    for i, (nm, job, sal) in enumerate(STAFF[dept], 1):
-        datarow(ws, r, [i, dept, nm, job, sal,
-                        f"=E{r}*{BA}!$B$4", f"=E{r}+F{r}",
-                        f"=IF({BA}!$B$6=1,G{r}*{BA}!$B$5,G{r}/(1-{BA}!$B$5)-G{r})", f"=G{r}+H{r}"],
-                fill=fill, fmts=[NUM, None, None, None, NUM, NUM, NUM, NUM, NUM])
-        r += 1
-    totalrow(ws, r, [None, None, None, 'ИТОГО %s (%d чел.)' % (dept, len(STAFF[dept])),
-                     f"=SUM(E{start}:E{r-1})", f"=SUM(F{start}:F{r-1})", f"=SUM(G{start}:G{r-1})",
-                     f"=SUM(H{start}:H{r-1})", f"=SUM(I{start}:I{r-1})"],
-             fmts=[None, None, None, None, NUM, NUM, NUM, NUM, NUM])
-    totals[dept] = r
-    r += 2
-notes(ws, r, ["Коэффициент перехода от оклада «на руки» к полной стоимости при текущих параметрах: (1 + KPI) × (1 + налог) = 1,20 × 1,075 = 1,29.",
-              "Состав отделов — hr.employee на %s: действующие сотрудники и те, чья дата увольнения позже среза. Отдел по работе с ключевыми клиентами включён в себестоимость по методологическому решению менеджмента." % CUT_RU])
-R_SUP, R_POS, R_SFA, R_KA = totals['Отдел тех. поддержки'], totals['Onboarding POS'], totals['Onboarding SFA'], totals['Отдел по работе с ключевыми клиентами']
-
-# ============ Хостинг детально ============
-ws = wb.create_sheet("Хостинг детально")
-widths(ws, {'A':5,'B':9,'C':70,'D':12,'E':12,'F':13,'G':20,'H':13,'I':12,'J':20,'K':18})
-title(ws, "A1", "Аренда серверов и хостинг — расшифровка")
-header(ws, 3, ['№','ID Odoo','Дата платежа','Период с','Период по','Месяц периода','Поставщик',
-               'Сумма, USD','Курс (rate)','Сумма в сумах (введена)','ИТОГО, сум'])
+# ============ ФОТ по отделам ============
+ws = wb.create_sheet('ФОТ по отделам')
+title(ws, 'A1', 'ФОТ отделов себестоимости по месяцам — факт из реестра «Расходы» Odoo, за период (на %s)' % CUT_RU)
+n = len(MS); cav = L(2 + n)
+header(ws, 3, ['Отдел / статья'] + ['%s 2026' % RUS[m] for m in MS] + ['Среднее в месяц'])
+r = 4; TOTROW = {}
+for did, name, key in DEPS:
+    section(ws, 'A%d' % r, name); r += 1; r0 = r
+    for k in ('Оклад', 'KPI', 'Прочие выплаты', 'Налоги ЗП (доля)'):
+        datarow(ws, r, ['    ' + k] + [round(F[(did, k, m)]) for m in MS] + ['=AVERAGE(B%d:%s%d)' % (r, L(1 + n), r)], fmts=[None] + [NUM] * (n + 1)); r += 1
+    totalrow(ws, r, ['ИТОГО ' + name] + ['=SUM(%s%d:%s%d)' % (L(cc), r0, L(cc), r - 1) for cc in range(2, 3 + n)], fmts=[None] + [NUM] * (n + 1)); TOTROW[key] = r; r += 2
+section(ws, 'A%d' % r, 'База распределения налогов'); r += 1
+datarow(ws, r, ['Налоги ЗП всего (статья «Налоги ЗП»)'] + [round(TAX[m]) for m in MS], fmts=[None] + [NUM] * n); rt = r; r += 1
+datarow(ws, r, ['Выплаты всех отделов (оклад, KPI, прочие)'] + [round(PAYALL[m]) for m in MS], fmts=[None] + [NUM] * n); rp = r; r += 1
+datarow(ws, r, ['Налоги в % от выплат'] + ['=IF(%s%d=0,0,%s%d/%s%d)' % (L(cc), rp, L(cc), rt, L(cc), rp) for cc in range(2, 2 + n)], fmts=[None] + [PCT] * n, blue_inputs=False); r += 2
+notes(ws, r, ['Источник: Odoo, реестр «Расходы» (x_custom_expenses), строки с отделом, статьи «Оклад», «KPI», «Материальная помощь». Выгрузка %s.' % EXPORT_RU,
+              'Месяц — по периоду расхода («Период начало – конец»), сумма делится по дням. Оклад за месяц, выплаченный в следующем месяце, стоит в своём месяце.',
+              'KPI — как фактически начислен за период (часто выплачивается за несколько месяцев разом), поэтому по месяцам скачет; столбец «Среднее» сглаживает.',
+              'Налоги ЗП в реестре без отдела — распределены по отделам пропорционально их выплатам в том же месяце.',
+              'Последний месяц может быть неполным: расходы, которые ещё не внесены в Odoo, сюда не попали.'])
+widths(ws, {'A': 46, **{L(cc): 15 for cc in range(2, 3 + n)}}); ws.freeze_panes = 'B4'
+FD = "'ФОТ по отделам'"; CM = L(1 + n)                      # колонка месяца среза
+# ============ Хостинг ============
+ws = wb.create_sheet('Хостинг')
+title(ws, 'A1', 'Хостинг и инфраструктура по месяцам (на %s)' % CUT_RU)
+header(ws, 3, ['Месяц', 'За период (в себестоимость)', 'По дате оплаты'])
 r = 4
-for i, (oid, dt, d1, d2, prov, usd, rate, val, mper) in enumerate(HOSTING, 1):
-    datarow(ws, r, [i, oid, dt, d1, d2, mper, prov, usd, rate, val, f"=IF(H{r}>0,H{r}*I{r},J{r})"],
-            fill=GREY, fmts=[NUM, NUM, None, None, None, None, None, DEC2, NUM, NUM, NUM])
-    r += 1
-last = r - 1
-totalrow(ws, r, [None, None, None, None, None, None, 'Итого за всё время', None, None, None,
-                 f"=SUM(K4:K{last})"], fmts=[None]*10 + [NUM])
-r += 2
-section(ws, "A%d" % r, "Помесячно (по периоду, к которому относится платёж)")
-r += 1
-header(ws, r, ['Месяц периода','Сумма, сум','Комментарий'])
-r += 1
-first_m = r
-AVGM = [m for m in MON if m >= '2026-04']
-provs = collections.defaultdict(collections.Counter)
-for h in HOSTING: provs[h[8]][h[4]] += 1
-def cm(m):
-    t = ' + '.join(k + (' ×%d' % v if v > 1 else '') for k, v in sorted(provs[m].items()))
-    if m in ('2026-02', '2026-03'): return 'НЕПОЛНЫЙ месяц: только ' + t + ', проведена задним числом. В среднее не берётся.'
-    return t
-for m in MON:
-    datarow(ws, r, [RUS[m] + ' 2026', f'=SUMIF($F$4:$F${last},"{m}",$K$4:$K${last})', cm(m)], fill=GREY, fmts=[None, NUM, None])
-    r += 1
-avg_row = r
-totalrow(ws, r, ['СРЕДНЕМЕСЯЧНО, Апр–%s 2026 (%d мес)' % (LAST_SH, len(AVGM)), f"=AVERAGE(B{first_m+2}:B{r-1})",
-                 'Период усреднения: все полные месяцы с апреля. Февраль и март исключены как неполные.'],
-         fmts=[None, NUM, None])
-notes(ws, r + 2, ['«Месяц периода» — месяц, на который приходится большая часть дней оплаченного периода: платёж за 26.10–25.11 отнесён к ноябрю и в срез не входит.',
-                  'Источник: Odoo, x_custom_expenses, аналитика «Хостинг и инфраструктура» (выгрузка %s). Валютные платежи пересчитаны по курсу из поля rate каждой записи.' % EXPORT_RU])
-AVG_REF = "'Хостинг детально'!$B$%d" % avg_row
-
+for m in MS: datarow(ws, r, ['%s 2026' % RUS[m], round(HOST[m]), round(HOSTP[m])], fmts=[None, NUM, NUM]); r += 1
+totalrow(ws, r, ['Среднее в месяц', '=AVERAGE(B4:B%d)' % (r - 1), '=AVERAGE(C4:C%d)' % (r - 1)], fmts=[None, NUM, NUM]); HROW = {m: 4 + i for i, m in enumerate(MS)}
+r += 2; header(ws, r, ['ID в Odoo', 'Дата оплаты', 'Период с', 'Период по', 'Сумма, сум', 'В долларах', 'Касса', 'Примечание']); r += 1
+for x in sorted(HREC, key=lambda x: (x['d1'], x['id'])):
+    datarow(ws, r, [x['id'], D(x['pay']), D(x['d1']), D(x['d2']), round(x['amt']), x['usd'] or None, x['kassa'], x['note']],
+            fmts=[None, 'DD.MM.YYYY', 'DD.MM.YYYY', 'DD.MM.YYYY', NUM, '#,##0.00', None, None], blue_inputs=False); r += 1
+notes(ws, r + 1, ['Источник: реестр «Расходы», статья «Хостинг и инфраструктура». Платёж за несколько месяцев делится по дням периода. Доллары — по 12 000 сум/$.'])
+widths(ws, {'A': 16, 'B': 22, 'C': 16, 'D': 12, 'E': 16, 'F': 12, 'G': 20, 'H': 50}); ws.freeze_panes = 'A4'
 # ============ Базы и допущения ============
-ws = wb.create_sheet("Базы и допущения")
-widths(ws, {'A':52,'B':18,'C':10,'D':80})
-title(ws, "A1", "Базы распределения и допущения")
-header(ws, 3, ['Параметр','Значение','Ед.','Источник / комментарий'])
-ROWS = [
- (4,'KPI, % от оклада каждого сотрудника',0.2,'%','МЕТОДОЛОГИЧЕСКОЕ РЕШЕНИЕ МЕНЕДЖМЕНТА: KPI каждый месяц разный, закладываем 20% от оклада по всей выборке.',PCT),
- (5,'Налог с ФОТ, ставка',0.075,'%','Оклады в Odoo — это суммы «на руки», сверх них компания платит 7,5%.',PCT),
- (6,'Метод начисления налога: 1 = сверху, 0 = внутри начисленного',1,'1/0','1 — налог считается сверх выплат: стоимость = выплаты × (1 + ставка). 0 — gross-up: стоимость = выплаты / (1 − ставка). Разница около 0,6%. По умолчанию 1.',NUM),
- (7,'Доля ФОТ Onboarding POS, относимая на ПОДДЕРЖКУ POS',0.5,'%','ДОПУЩЕНИЕ: выделенного отдела поддержки POS нет, функцию выполняет Onboarding POS. Тайм-шита нет → 50/50.',PCT),
- (8,'Курс USD → UZS',12000,'сум','Управленческий курс, ориентир — res.currency.rate в Odoo на 01.08.2026. Применяется к валютным подпискам в MRR; в расходах курс берётся построчно из поля rate.',NUM),
- (10,'MRR действующих подписок, POS',MRR_POS_ACT,'сум/мес','Срез ' + CUT_RU + '. %d подписок.' % N_POS_ACT,NUM),
- (11,'MRR подписок на паузе, POS',MRR_POS_PAUSE,'сум/мес','%d подписок. По решению менеджмента пауза считается активной базой.' % N_POS_PAUSE,NUM),
- (12,'MRR действующих подписок, SFA',MRR_SFA_ACT,'сум/мес','Срез ' + CUT_RU + ', включая валютные подписки по курсу 12 000. %d подписок.' % N_SFA_ACT,NUM),
- (13,'MRR подписок на паузе, SFA',MRR_SFA_PAUSE,'сум/мес','%d подписок.' % N_SFA_PAUSE,NUM),
-]
-for r, a, b, c, dd, fmt in ROWS:
-    datarow(ws, r, [a, b, c, dd], fill=GREY, fmts=[None, fmt, None, None], wrap=True)
-CALC = [
- (15,'MRR SFA, всего в сумах (с паузой)','=B12+B13','сум/мес','Расчёт',NUM),
- (16,'MRR POS, всего в сумах (с паузой)','=B10+B11','сум/мес','Расчёт',NUM),
- (17,'MRR всего (POS + SFA)','=B16+B15','сум/мес','Расчёт. Сходится с отчётом «MRR_и_когортное_удержание_2026_%s.xlsx».' % SUF,NUM),
- (18,'Доля POS в MRR — база для деления хостинга','=B16/B17','%','В расходах на хостинг признака продукта нет — делим по выручке.',PCT),
- (19,'Доля SFA в MRR — база для деления хостинга','=B15/B17','%','',PCT),
- (21,'Действующих подписок POS',N_POS_ACT,'шт.','Статус «в работе» на конец дня ' + CUT_RU + ' по истории статусов Odoo (включая возвращённые из закрытия после среза)',NUM),
- (22,'Подписок на паузе POS',N_POS_PAUSE,'шт.','subscription_state = 4_paused',NUM),
- (23,'Действующих подписок SFA',N_SFA_ACT,'шт.','subscription_state = 3_progress',NUM),
- (24,'Подписок на паузе SFA',N_SFA_PAUSE,'шт.','subscription_state = 4_paused',NUM),
- (25,'Подписок в базе, POS (действующие + пауза)','=B21+B22','шт.','Расчёт',NUM),
- (26,'Подписок в базе, SFA (действующие + пауза)','=B23+B24','шт.','Расчёт',NUM),
-]
-for r, a, b, c, dd, fmt in CALC:
-    datarow(ws, r, [a, b, c, dd], fill=GREY, fmts=[None, fmt, None, None], wrap=True)
-
-# ============ Свод себестоимости ============
-ws = wb.create_sheet("Свод себестоимости")
-widths(ws, {'A':24,'B':52,'C':50,'D':19,'E':19,'F':19})
-title(ws, "A1", "Linktrade — себестоимость поддержки, внедрения, сопровождения ключевых клиентов и инфраструктуры (на " + CUT_RU + ")")
-header(ws, 3, ['Блок','Статья затрат','База отнесения на продукт','ВСЕГО, сум/мес','POS, сум/мес','SFA, сум/мес'])
-FD = "'ФОТ детально'"
-section(ws, "A4", "ПОДДЕРЖКА")
-datarow(ws, 5, [None,'ФОТ отдела технической поддержки, %d чел. (полная стоимость)' % NS['Отдел тех. поддержки'],
-                '100% на SFA — выделенная поддержка обслуживает SFA',
-                f"={FD}!$I${R_SUP}", '=0', '=D5'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-datarow(ws, 6, [None,'Функция поддержки внутри Onboarding POS',
-                'Доля от полной стоимости Onboarding POS (параметр на листе «Базы и допущения»)',
-                f"={FD}!$I${R_POS}*{BA}!$B$7", '=D6', '=0'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-totalrow(ws, 7, [None,'ИТОГО поддержка',None,'=D5+D6','=E5+E6','=F5+F6'], fmts=[None,None,None,NUM,NUM,NUM])
-section(ws, "A8", "ВНЕДРЕНИЕ")
-datarow(ws, 9, [None,'ФОТ Onboarding SFA, %d чел. (полная стоимость)' % NS['Onboarding SFA'],'100% на SFA — напрямую',
-                f"={FD}!$I${R_SFA}", '=0', '=D9'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-datarow(ws, 10, [None,'ФОТ Onboarding POS, часть на внедрение','Остаток полной стоимости Onboarding POS после поддержки',
-                 f"={FD}!$I${R_POS}*(1-{BA}!$B$7)", '=D10', '=0'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-totalrow(ws, 11, [None,'ИТОГО внедрение',None,'=D9+D10','=E9+E10','=F9+F10'], fmts=[None,None,None,NUM,NUM,NUM])
-section(ws, "A12", "СОПРОВОЖДЕНИЕ КЛЮЧЕВЫХ КЛИЕНТОВ")
-datarow(ws, 13, [None,'ФОТ отдела по работе с ключевыми клиентами, %d чел. (полная стоимость)' % NS['Отдел по работе с ключевыми клиентами'],
-                 '100% на SFA — ключевые клиенты (дистрибьюторы) обслуживаются по SFA',
-                 f"={FD}!$I${R_KA}", '=0', '=D13'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-totalrow(ws, 14, [None,'ИТОГО сопровождение ключевых клиентов',None,'=D13','=E13','=F13'], fmts=[None,None,None,NUM,NUM,NUM])
-section(ws, "A15", "ОБСЛУЖИВАНИЕ ИНФРАСТРУКТУРЫ")
-datarow(ws, 16, [None,'Аренда серверов и хостинг (среднее Апр–%s 2026)' % LAST_SH,'Пропорционально MRR продуктов: POS / SFA',
-                 f"={AVG_REF}", f"=D16*{BA}!$B$18", f"=D16*{BA}!$B$19"], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-totalrow(ws, 17, [None,'ИТОГО инфраструктура',None,'=D16','=E16','=F16'], fmts=[None,None,None,NUM,NUM,NUM])
-totalrow(ws, 18, [None,'ИТОГО СЕБЕСТОИМОСТЬ',None,'=D7+D11+D14+D17','=E7+E11+E14+E17','=F7+F11+F14+F17'], fmts=[None,None,None,NUM,NUM,NUM])
-section(ws, "A20", "Справочно")
-datarow(ws, 21, [None,'MRR подписок в базе (действующие + пауза), сум/мес',None,'=E21+F21',
-                 f"={BA}!$B$16", f"={BA}!$B$15"], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM])
-datarow(ws, 22, [None,'Себестоимость в % от MRR',None,'=D18/D21','=E18/E21','=F18/F21'], fill=GREY, fmts=[None,None,None,PCT,PCT,PCT])
-datarow(ws, 23, [None,'Подписок в базе (действующие + пауза), шт.',None,'=E23+F23',
-                 f"={BA}!$B$25", f"={BA}!$B$26"], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM])
-datarow(ws, 24, [None,'Себестоимость на 1 подписку, сум/мес',None,'=D18/D23','=E18/E23','=F18/F23'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM])
-datarow(ws, 25, [None,'Справочно: себестоимость без ключевых клиентов',None,'=D18-D14','=E18-E14','=F18-F14'], fill=GREY, fmts=[None,None,None,NUM,NUM,NUM], wrap=True)
-section(ws, "A28", "Как считалось:")
-_K = 1.2 * 1.075
-_sal = lambda d: sum(x[2] for x in STAFF[d])
-_sh = MRR_POS / (MRR_POS + MRR_SFA) * 100
-_f = lambda v: ('%.1f' % (v / 1e6)).replace('.', ',')
-notes(ws, 29, [
- "  • ФОТ. Оклад в Odoo (x_studio_salary_1) — это сумма «на руки». Сверху начисляется KPI 20% от оклада и налог с ФОТ 7,5%. Полная стоимость = оклад × 1,20 × 1,075 = оклад × 1,29. Ставки и метод начисления налога меняются на листе «Базы и допущения».",
- "  • Поддержка — отдел технической поддержки (%d чел.) целиком на SFA. Поддержку POS выполняет Onboarding POS, поэтому его ФОТ делится между поддержкой и внедрением параметром (по умолчанию 50/50)." % NS['Отдел тех. поддержки'],
- "  • Внедрение — Onboarding SFA целиком на SFA, остаток Onboarding POS — на POS. Onboarding POS на %s — %d человек, ФОТ отдела %s млн «на руки»." % (CUT_RU, NS['Onboarding POS'], _f(_sal('Onboarding POS'))),
- "  • Сопровождение ключевых клиентов — отдел по работе с ключевыми клиентами (%d чел., %s млн «на руки», полная стоимость с KPI и налогом %s млн/мес) целиком на SFA: ключевые клиенты — дистрибьюторы, работающие на SFA. Это удержание и развитие действующих клиентов, а не привлечение, поэтому статья относится к себестоимости, а не к CAC (методологическое решение менеджмента)."
-   % (NS['Отдел по работе с ключевыми клиентами'], _f(_sal('Отдел по работе с ключевыми клиентами')), _f(_sal('Отдел по работе с ключевыми клиентами') * _K)),
- "  • Обслуживание инфраструктуры — своих серверов нет, берём аренду: аналитика «Хостинг и инфраструктура» в x_custom_expenses, среднее за Апр–%s 2026 (%d полных месяцев). Валютные платежи пересчитаны по полю rate каждой записи. Февраль и март исключены как неполные." % (LAST_SH, len(AVGM)),
- "  • Хостинг разделён между продуктами пропорционально MRR подписок в базе на %s (POS ≈ %s%%, SFA ≈ %s%%) — в самих расходах признака продукта нет. Подписки на паузе (4_paused) включены в базу как действующие: клиент не ушёл, сервер под него продолжает работать."
-   % (CUT_RU, ('%.1f' % _sh).replace('.', ','), ('%.1f' % (100 - _sh)).replace('.', ',')),
- "Что НЕ включено: ФОТ разработки, продаж и маркетинга (привлечение — в CAC), аренда офиса и административные расходы, SaaS-подписки и связь, амортизация, командировки и ГСМ выездных сотрудников."])
-wb._sheets = [wb["Свод себестоимости"], wb["Базы и допущения"], wb["Хостинг детально"], wb["ФОТ детально"]]
-OUT = OUTP("Себестоимость_поддержки_внедрения_инфраструктуры_%s.xlsx" % SUF)
-wb.save(OUT)
-
-# --- контрольный расчёт в питоне ---
-K = 1.2 * 1.075
-sup = sum(s[2] for s in STAFF['Отдел тех. поддержки']) * K
-onp = sum(s[2] for s in STAFF['Onboarding POS']) * K
-ons = sum(s[2] for s in STAFF['Onboarding SFA']) * K
-ka = sum(s[2] for s in STAFF['Отдел по работе с ключевыми клиентами']) * K
-host = {}
-for oid, dt, d1, d2, prov, usd, rate, val, mper in HOSTING:
-    host[mper] = host.get(mper, 0) + (usd * rate if usd > 0 else val)
-avg = sum(host[m] for m in AVGM) / len(AVGM)
-sh_pos = MRR_POS / (MRR_POS + MRR_SFA)
-cost_pos = onp * 0.5 + onp * 0.5 + avg * sh_pos
-cost_sfa = sup + ons + ka + avg * (1 - sh_pos)
-print("saved", OUT)
-print("ФОТ поддержка", int(sup), "| Onb POS", int(onp), "| Onb SFA", int(ons), "| KA", int(ka))
-print("хостинг по месяцам:", {m: int(v) for m, v in sorted(host.items())})
-print("среднее Апр–%s:" % LAST_SH, int(avg), "| доля POS %.2f%%" % (sh_pos * 100))
-print("ИТОГО:", int(cost_pos + cost_sfa), "| POS", int(cost_pos), "| SFA", int(cost_sfa))
-print("%% от MRR: POS %.1f%% SFA %.1f%% всего %.1f%%" % (cost_pos/MRR_POS*100, cost_sfa/MRR_SFA*100,
-      (cost_pos+cost_sfa)/(MRR_POS+MRR_SFA)*100))
-print("на подписку: POS", int(cost_pos/(N_POS_ACT+N_POS_PAUSE)), "SFA", int(cost_sfa/(N_SFA_ACT+N_SFA_PAUSE)))
-
-json.dump({'COGS': {'POS': cost_pos, 'SFA': cost_sfa}, 'KA': ka, 'SUP': sup, 'ONP': onp, 'ONS': ons, 'HOST_AVG': avg,
-           'HOST_M': {m: host.get(m, 0) for m in MON}, 'NS': NS,
-           'SAL': {k: sum(x[2] for x in v) for k, v in STAFF.items()}}, open(J('cost'), 'w'), ensure_ascii=False)
+ws = wb.create_sheet('Базы и допущения')
+widths(ws, {'A': 52, 'B': 18, 'C': 10, 'D': 80}); title(ws, 'A1', 'Базы распределения и допущения')
+header(ws, 3, ['Параметр', 'Значение', 'Ед.', 'Источник / комментарий'])
+ROWS = [(7, 'Доля ФОТ Onboarding POS, относимая на ПОДДЕРЖКУ POS', 0.5, '%', 'ДОПУЩЕНИЕ: выделенного отдела поддержки POS нет, функцию выполняет Onboarding POS. Тайм-шита нет → 50/50.', PCT),
+        (8, 'Курс USD → UZS', 12000, 'сум', 'Управленческий курс для всего комплекта: валютные подписки и расходы в долларах.', NUM),
+        (10, 'MRR действующих подписок, POS', MRR_POS_ACT, 'сум/мес', 'Срез %s. %d подписок.' % (CUT_RU, N_POS_ACT), NUM),
+        (11, 'MRR подписок на паузе, POS', MRR_POS_PAUSE, 'сум/мес', '%d подписок. Пауза считается действующей базой.' % N_POS_PAUSE, NUM),
+        (12, 'MRR действующих подписок, SFA', MRR_SFA_ACT, 'сум/мес', 'Срез %s. %d подписок.' % (CUT_RU, N_SFA_ACT), NUM),
+        (13, 'MRR подписок на паузе, SFA', MRR_SFA_PAUSE, 'сум/мес', '%d подписок.' % N_SFA_PAUSE, NUM)]
+for rr, a, b, cc, dd, fmt in ROWS: datarow(ws, rr, [a, b, cc, dd], fill=GREY, fmts=[None, fmt, None, None], wrap=True)
+for rr, a, b, cc, dd, fmt in [(15, 'MRR SFA (с паузой)', '=B12+B13', 'сум/мес', '', NUM), (16, 'MRR POS (с паузой)', '=B10+B11', 'сум/мес', '', NUM), (17, 'MRR всего', '=B16+B15', 'сум/мес', '', NUM),
+                              (18, 'Доля POS в MRR — база деления хостинга', '=B16/B17', '%', 'В расходах на хостинг признака продукта нет — делим по MRR.', PCT), (19, 'Доля SFA в MRR', '=B15/B17', '%', '', PCT),
+                              (21, 'Подписок в базе, POS (действующие + пауза)', N_POS_ACT + N_POS_PAUSE, 'шт.', '', NUM), (22, 'Подписок в базе, SFA (действующие + пауза)', N_SFA_ACT + N_SFA_PAUSE, 'шт.', '', NUM)]:
+    datarow(ws, rr, [a, b, cc, dd], fill=GREY, fmts=[None, fmt, None, None], wrap=True)
+BA = "'Базы и допущения'"; HS = "'Хостинг'"
+# ============ Свод ============
+ws = wb.create_sheet('Свод себестоимости')
+widths(ws, {'A': 24, 'B': 52, 'C': 50, 'D': 19, 'E': 19, 'F': 19})
+title(ws, 'A1', 'Linktrade — себестоимость за %s 2026: поддержка, внедрение, ключевые клиенты, инфраструктура (факт, на %s)' % (LAST_RU_L, CUT_RU))
+header(ws, 3, ['Блок', 'Статья затрат', 'База отнесения на продукт', 'ВСЕГО, сум/мес', 'POS, сум/мес', 'SFA, сум/мес'])
+ref = lambda key: "=%s!$%s$%d" % (FD, CM, TOTROW[key]); fm = [None, None, None, NUM, NUM, NUM]
+section(ws, 'A4', 'ПОДДЕРЖКА')
+datarow(ws, 5, [None, 'ФОТ отдела технической поддержки (%d чел. в штате)' % NS['Отдел тех. поддержки'], '100% на SFA', ref('SUP'), '=0', '=D5'], fill=GREY, fmts=fm, wrap=True)
+datarow(ws, 6, [None, 'Функция поддержки внутри Onboarding POS', 'Доля ФОТ Onboarding POS (лист «Базы и допущения»)', ref('ONP') + '*%s!$B$7' % BA, '=D6', '=0'], fill=GREY, fmts=fm, wrap=True)
+totalrow(ws, 7, [None, 'ИТОГО поддержка', None, '=D5+D6', '=E5+E6', '=F5+F6'], fmts=fm)
+section(ws, 'A8', 'ВНЕДРЕНИЕ')
+datarow(ws, 9, [None, 'ФОТ Onboarding SFA (%d чел. в штате)' % NS['Onboarding SFA'], '100% на SFA', ref('ONS'), '=0', '=D9'], fill=GREY, fmts=fm, wrap=True)
+datarow(ws, 10, [None, 'ФОТ Onboarding POS, часть на внедрение (%d чел. в штате)' % NS['Onboarding POS'], 'Остаток ФОТ Onboarding POS', ref('ONP') + '*(1-%s!$B$7)' % BA, '=D10', '=0'], fill=GREY, fmts=fm, wrap=True)
+totalrow(ws, 11, [None, 'ИТОГО внедрение', None, '=D9+D10', '=E9+E10', '=F9+F10'], fmts=fm)
+section(ws, 'A12', 'СОПРОВОЖДЕНИЕ КЛЮЧЕВЫХ КЛИЕНТОВ')
+datarow(ws, 13, [None, 'ФОТ отдела по работе с ключевыми клиентами (%d чел. в штате)' % NS['Отдел по работе с ключевыми клиентами'], '100% на SFA', ref('KA'), '=0', '=D13'], fill=GREY, fmts=fm, wrap=True)
+totalrow(ws, 14, [None, 'ИТОГО сопровождение ключевых клиентов', None, '=D13', '=E13', '=F13'], fmts=fm)
+section(ws, 'A15', 'ОБСЛУЖИВАНИЕ ИНФРАСТРУКТУРЫ')
+datarow(ws, 16, [None, 'Хостинг и инфраструктура за %s' % LAST_RU_L, 'Пропорционально MRR: POS / SFA', '=%s!$B$%d' % (HS, HROW[LAST_M]), '=D16*%s!$B$18' % BA, '=D16*%s!$B$19' % BA], fill=GREY, fmts=fm, wrap=True)
+totalrow(ws, 17, [None, 'ИТОГО инфраструктура', None, '=D16', '=E16', '=F16'], fmts=fm)
+totalrow(ws, 18, [None, 'ИТОГО СЕБЕСТОИМОСТЬ', None, '=D7+D11+D14+D17', '=E7+E11+E14+E17', '=F7+F11+F14+F17'], fmts=fm)
+section(ws, 'A20', 'Справочно')
+datarow(ws, 21, [None, 'MRR подписок в базе (действующие + пауза)', None, '=E21+F21', '=%s!$B$16' % BA, '=%s!$B$15' % BA], fill=GREY, fmts=fm)
+datarow(ws, 22, [None, 'Себестоимость в % от MRR', None, '=D18/D21', '=E18/E21', '=F18/F21'], fill=GREY, fmts=[None, None, None, PCT, PCT, PCT])
+datarow(ws, 23, [None, 'Подписок в базе, шт.', None, '=E23+F23', '=%s!$B$21' % BA, '=%s!$B$22' % BA], fill=GREY, fmts=fm)
+datarow(ws, 24, [None, 'Себестоимость на 1 подписку, сум/мес', None, '=D18/D23', '=E18/E23', '=F18/F23'], fill=GREY, fmts=fm)
+notes(ws, 27, ['Как считалось:',
+  '  • Это ФАКТ за %s 2026 из реестра «Расходы» Odoo, а не расчёт от окладов в карточках сотрудников. Месяц — по периоду расхода: оклад за %s, выплаченный позже, входит.' % (LAST_RU_L, LAST_RU_L),
+  '  • ФОТ отдела = оклад + KPI + прочие выплаты по строкам расходов с этим отделом + налоги ЗП (распределены по отделам пропорционально выплатам). Помесячно — лист «ФОТ по отделам».',
+  '  • Поддержка — отдел тех. поддержки целиком на SFA; поддержку POS выполняет Onboarding POS, его ФОТ делится 50/50 между поддержкой и внедрением (параметр).',
+  '  • Внедрение — Onboarding SFA на SFA, остаток Onboarding POS на POS. Ключевые клиенты — целиком на SFA (удержание, не привлечение).',
+  '  • Хостинг — статья «Хостинг и инфраструктура» за период месяца, делится между продуктами пропорционально MRR (в расходах признака продукта нет).',
+  '  • KPI начисляется неравномерно (иногда за несколько месяцев разом), поэтому себестоимость по месяцам может скакать — на листе «ФОТ по отделам» есть среднее.',
+  'Что НЕ включено: ФОТ разработки, продаж и маркетинга, обед, аутсорс, аренда офиса и административные расходы, SaaS-подписки, связь.'])
+# ============ Сотрудники (справочно) ============
+ws = wb.create_sheet('Сотрудники отделов')
+title(ws, 'A1', 'Сотрудники отделов себестоимости на %s (справочно, из карточек сотрудников)' % CUT_RU)
+header(ws, 3, ['Отдел', 'Сотрудник', 'Должность', 'Оклад в карточке, сум/мес']); r = 4
+for did, name, _ in DEPS:
+    for e in STAFF[did]: datarow(ws, r, [name, e['name'], e['job'], e['sal']], fmts=[None, None, None, NUM], blue_inputs=False); r += 1
+widths(ws, {'A': 36, 'B': 32, 'C': 40, 'D': 18})
+wb._sheets = [wb['Свод себестоимости'], wb['ФОТ по отделам'], wb['Хостинг'], wb['Базы и допущения'], wb['Сотрудники отделов']]
+OUT = OUTP('Себестоимость_поддержки_внедрения_инфраструктуры_%s.xlsx' % SUF); wb.save(OUT)
+# --- расчёт для пульта и юнит-экономики
+tot = lambda did, m: sum(F[(did, k, m)] for k in ('Оклад', 'KPI', 'Прочие выплаты', 'Налоги ЗП (доля)'))
+V = {key: tot(did, LAST_M) for did, _, key in DEPS}; hm = HOST[LAST_M]; sh = MRR_POS / (MRR_POS + MRR_SFA)
+cost_pos = V['ONP'] + hm * sh; cost_sfa = V['SUP'] + V['ONS'] + V['KA'] + hm * (1 - sh)
+json.dump({'COGS': {'POS': cost_pos, 'SFA': cost_sfa}, 'KA': V['KA'], 'SUP': V['SUP'], 'ONP': V['ONP'], 'ONS': V['ONS'], 'HOST': hm, 'HOST_AVG': hm,
+           'HOST_M': {m: HOST.get(m, 0) for m in MS}, 'HOST_PAY_M': {m: HOSTP.get(m, 0) for m in MS}, 'NS': NS,
+           'SAL': {name: sum(e['sal'] for e in STAFF[did]) for did, name, _ in DEPS},
+           'FOT_M': {key: {m: tot(did, m) for m in MS} for did, _, key in DEPS}}, open(J('cost'), 'w'), ensure_ascii=False)
+print(OUT); print({k: round(v / 1e6, 1) for k, v in V.items()}, 'хостинг', round(hm / 1e6, 1), '| ИТОГО', round((cost_pos + cost_sfa) / 1e6, 1), 'POS', round(cost_pos / 1e6, 1), 'SFA', round(cost_sfa / 1e6, 1))
+for did, _, key in DEPS: print(key, [round(tot(did, m) / 1e6, 1) for m in MS])
+print('хостинг', [round(HOST[m] / 1e6, 1) for m in MS])

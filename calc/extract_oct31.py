@@ -53,6 +53,17 @@ for r in rows:
         'next_invoice': str(r['next_invoice_date']) if r['next_invoice_date'] else None,
         'first_contract': str(r['first_contract_date']) if r['first_contract_date'] else None,
         'plname': (pn.get('ru_RU') or pn.get('en_US')) if isinstance(pn, dict) else pn, 'lines': r['lines']})
+# MRR подписки = нарастающий итог журнала изменений MRR (sale.order.log) по дату среза — единый источник для всех разделов (решение 19.11.2026)
+_js = {r['id']: (float(r['s']), r['name'], r['st'], r['prod']) for r in db.query(f"""select so.id, so.name, so.subscription_state st, {PROD_SQL} prod,
+   sum(case when l.currency_id=1 then l.amount_signed*12000 else l.amount_signed end) s
+   from sale_order_log l join sale_order so on so.id=l.order_id where l.event_date <= date '{CUT}' group by 1,2,3,4""")}
+_bid = set()
+JERR = []
+for b in base:
+    b['mrr_sub'] = b['mrr']; b['mrr'] = _js.get(b['id'], (0.0,))[0]; _bid.add(b['id'])
+    if abs(b['mrr'] - b['mrr_sub']) > 1: JERR.append({'name': b['name'], 'pname': b['pname'], 'prod': b['prod'], 'st': b['st'], 'sub': b['mrr_sub'], 'log': b['mrr'], 'where': 'в базе'})
+for i, (v, nm, st, pr) in _js.items():
+    if i not in _bid and abs(v) > 1: JERR.append({'name': nm, 'pname': '', 'prod': pr, 'st': st, 'sub': 0.0, 'log': v, 'where': 'вне базы на срез'})
 dump('base', base)
 agg = collections.defaultdict(lambda: [0, 0.0])
 for b in base: agg[(b['prod'], b['st'])][0] += 1; agg[(b['prod'], b['st'])][1] += b['mrr']
@@ -133,6 +144,9 @@ c['MRR_SUBS'] = {p: sum(b['mrr'] for b in base if b['prod'] == p) for p in ('POS
 _lj = {r['prod']: float(r['s']) for r in db.query(f"""select {PROD_SQL} prod, sum(case when l.currency_id=1 then l.amount_signed*12000 else l.amount_signed end) s
    from sale_order_log l join sale_order so on so.id=l.order_id where l.event_date <= date '{CUT}' group by 1""")}
 c['MRR'] = {p: _lj.get(p, 0.0) for p in ('POS', 'SFA')}
+c['MRR_SUBS'] = {p: sum(b['mrr_sub'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}   # по самим подпискам (справочно)
+c['MRR_JOUT'] = {p: c['MRR'][p] - sum(b['mrr'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}   # журнал подписок вне базы (ошибки журнала)
+c['JERR'] = JERR
 c['SPLIT'] = {p: {s: [sum(1 for b in base if b['prod']==p and b['st']==s), sum(b['mrr'] for b in base if b['prod']==p and b['st']==s)]
                   for s in ('3_progress','4_paused')} for p in ('POS','SFA')}
 bp = {b['id']: b['prod'] for b in base}
