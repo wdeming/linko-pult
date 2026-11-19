@@ -204,7 +204,7 @@ for cut in cuts:
     fp = os.path.join(dn, 'x_%s_res_fin.json' % t)
     if os.path.exists(fp):
         FN = json.load(open(fp, encoding='utf-8')); MSx = FN['MS']; PLm = FN['PL'].get(m); RECx = FN['REC']
-        rk = lambda k, mm: RECx.get('%s|%s' % (k, mm), 0)
+        rkx = lambda k, mm: RECx.get('%s|%s' % (k, mm), 0)
         def pl_row(lab, f, pct=False):
             tot_n = tot_d = 0.0
             for mm in MSx:
@@ -212,23 +212,23 @@ for cut in cuts:
                 if pct: n_, d_ = v; ser('pl_tab', lab, ml(mm), n_ / d_ if d_ else None); tot_n += n_; tot_d += d_
                 else: ser('pl_tab', lab, ml(mm), v); tot_n += v
             ser('pl_tab', lab, 'Итого', (tot_n / tot_d if tot_d else None) if pct else tot_n)
-        P = FN['PL']
-        pl_row('Подписки SFA', lambda mm: rk('Подписки SFA', mm)); pl_row('Подписки POS', lambda mm: rk('Подписки POS', mm)); pl_row('Разовые работы и прочее', lambda mm: rk('Разовые работы и прочее', mm))
-        pl_row('ВЫРУЧКА', lambda mm: P[mm]['rev'])
+        PLd = FN['PL']
+        pl_row('Подписки SFA', lambda mm: rkx('Подписки SFA', mm)); pl_row('Подписки POS', lambda mm: rkx('Подписки POS', mm)); pl_row('Разовые работы и прочее', lambda mm: rkx('Разовые работы и прочее', mm))
+        pl_row('ВЫРУЧКА', lambda mm: PLd[mm]['rev'])
         pl_row('ФОТ поддержки, внедрения, ключевых клиентов', lambda mm: FN['COGS_FOT'][mm]); pl_row('Хостинг и инфраструктура', lambda mm: FN['HOST'][mm])
-        pl_row('СЕБЕСТОИМОСТЬ', lambda mm: P[mm]['cogs']); pl_row('ВАЛОВАЯ ПРИБЫЛЬ', lambda mm: P[mm]['gp'])
-        pl_row('Валовая маржа, %', lambda mm: (P[mm]['gp'], P[mm]['rev']), True)
+        pl_row('СЕБЕСТОИМОСТЬ', lambda mm: PLd[mm]['cogs']); pl_row('ВАЛОВАЯ ПРИБЫЛЬ', lambda mm: PLd[mm]['gp'])
+        pl_row('Валовая маржа, %', lambda mm: (PLd[mm]['gp'], PLd[mm]['rev']), True)
         for lab, v in FN['OPX'].items(): pl_row(lab.split(' (')[0] if lab.startswith('Персонал') or lab.startswith('Комиссии') else lab, lambda mm, v=v: v[mm])
-        pl_row('ОПЕРАЦИОННЫЕ РАСХОДЫ', lambda mm: P[mm]['opex']); pl_row('EBITDA', lambda mm: P[mm]['ebitda'])
-        pl_row('EBITDA, % выручки', lambda mm: (P[mm]['ebitda'], P[mm]['rev']), True)
+        pl_row('ОПЕРАЦИОННЫЕ РАСХОДЫ', lambda mm: PLd[mm]['opex']); pl_row('EBITDA', lambda mm: PLd[mm]['ebitda'])
+        pl_row('EBITDA, % выручки', lambda mm: (PLd[mm]['ebitda'], PLd[mm]['rev']), True)
         pl_row('Капитальные расходы (не в EBITDA)', lambda mm: FN.get('CAPEX', {}).get(mm, 0))
         for mm in MSx:
-            for k2, nm in (('rev', 'Выручка'), ('cogs', 'Себестоимость'), ('opex', 'Операционные расходы'), ('ebitda', 'EBITDA')): ser('pl_chart', ml(mm), nm, P[mm][k2])
+            for k2, nm in (('rev', 'Выручка'), ('cogs', 'Себестоимость'), ('opex', 'Операционные расходы'), ('ebitda', 'EBITDA')): ser('pl_chart', ml(mm), nm, PLd[mm][k2])
         if PLm:
             add('fin_pl', 'f_rev', 'Выручка за месяц (признанная)', PLm['rev'], 'm', 'up'); add('fin_pl', 'f_gm', 'Валовая маржа', PLm['gp'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
             add('fin_pl', 'f_opex', 'Операционные расходы за месяц', PLm['opex'], 'm', 'down'); add('fin_pl', 'f_ebitda', 'EBITDA за месяц', PLm['ebitda'], 'm', 'up')
             add('fin_pl', 'f_ebitda_pct', 'EBITDA, % выручки', PLm['ebitda'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
-            add('fin_pl', 'f_ebitda_cum', 'EBITDA с апреля, накопленно', sum(P[mm]['ebitda'] for mm in MSx), 'm', 'up')
+            add('fin_pl', 'f_ebitda_cum', 'EBITDA с апреля, накопленно', sum(PLd[mm]['ebitda'] for mm in MSx), 'm', 'up')
         CSx = FN['CS']; cm = CSx.get(m)
         for lab, k2 in (('Остаток денег на начало месяца', 'open'), ('Поступления от клиентов', 'in'), ('Комиссии платёжных систем', 'com'), ('Расходы по дате оплаты', 'exp'),
                         ('ОПЕРАЦИОННЫЙ ДЕНЕЖНЫЙ ПОТОК', 'op'), ('Займы получены', 'lt'), ('Займы возвращены', 'lp'), ('Прочие движения и расхождения учёта', 'oth'),
@@ -250,9 +250,9 @@ for cut in cuts:
             ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Признано', sum(RECx.get('%s|%s' % (k, mm), 0) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')))
             ser('rev_lines', ml(mm), 'Выставлено', FN['INV'][mm]); ser('rev_lines', ml(mm), 'Получено', FN['IN'][mm])
             ser('rev_def', ml(mm), 'Отложенная выручка', FN['DEF'][mm])
-            ser('rev_sfa', ml(mm), 'Признано SFA', rk('Подписки SFA', mm))
+            ser('rev_sfa', ml(mm), 'Признано SFA', rkx('Подписки SFA', mm))
         for b, v in FN['AR'].items(): ser('ar_age', b, 'Сумма', v)
-        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rk(k, m) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')), 'm', 'up')
+        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rkx(k, m) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')), 'm', 'up')
         add('fin_rev', 'f_inv', 'Выставлено за месяц', FN['INV'][m], 'm', 'up'); add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
         add('fin_rev', 'f_def', 'Отложенная выручка на конец месяца', FN['DEF'][m], 'm', '')
         add('fin_rev', 'f_ar', 'Неоплаченные счета (дебиторка)', sum(FN['AR'].values()), 'm', 'down'); add('fin_rev', 'f_ar90', 'из них просрочены больше 90 дней', FN['AR']['91–180 дней'] + FN['AR']['больше 180 дней'], 'm', 'down')
