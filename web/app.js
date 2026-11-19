@@ -155,7 +155,7 @@
     const H = 250, mt = 8, mb = 24, band = d3.scaleBand().domain(xs).padding(type === 'line' ? 0 : 0.22);
     let lo = 0, hi = 0;
     if (type === 'stack') xs.forEach((x) => { let p = 0, n = 0; ss.forEach((s) => { const v = val(x, s); if (v >= 0) p += v; else n += v; }); hi = Math.max(hi, p); lo = Math.min(lo, n); });
-    else { const all = data.map((r) => r.v).filter((v) => v != null); hi = d3.max(all); lo = type === 'line' ? Math.min(d3.min(all), k === 'p' ? d3.min(all) : 0) : Math.min(0, d3.min(all)); if (type === 'line') { const pad = (hi - lo) * 0.12 || 0.05; lo -= pad; hi += pad; } }
+    else { const all = data.map((r) => r.v).filter((v) => v != null); hi = d3.max(all); lo = type === 'line' ? Math.min(d3.min(all), k === 'p' ? d3.min(all) : 0) : Math.min(0, d3.min(all)); if (type === 'line') { const pad = (hi - lo) * 0.12 || 0.05; const mn = d3.min(all); lo -= pad; hi += pad; if (mn >= 0 && k !== 'p') lo = Math.max(lo, 0); } }
     const y = d3.scaleLinear().domain([lo, hi || 1]).nice(4).range([H - mb, mt]);
     const tf = (v) => k === 'p' ? nf0.format(v * 100) + '%' : (k === 'm' ? (Math.abs(v) >= 1e6 ? nf0.format(v / 1e6) + ' млн' : nf0.format(v)) : nf0.format(v));
     const ticks = y.ticks(4), ml = d3.max(ticks, (t) => tf(t).length) * 6.6 + 12;

@@ -251,3 +251,4 @@ body[data-mode="fin"] .pl-cutbar{background:linear-gradient(135deg,color-mix(in 
 @media (max-width:760px){.pl-top{gap:10px}.pl-modes{order:3;width:100%;justify-content:stretch}.pl-mode{flex:1}.pl-tagline{display:none}.pl-tabs{overflow-x:auto;flex-wrap:nowrap}.pl-tab{white-space:nowrap}}
 @media print{.pl-top{position:static}.pl-modes{display:none}}
 .pl-fig.pl-wide .pl-tw{max-height:none}
+.pl-status{flex-wrap:nowrap;align-items:flex-start}.pl-status .pl-lamp{flex:none;margin-top:4px}
