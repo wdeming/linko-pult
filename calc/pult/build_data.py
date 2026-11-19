@@ -227,7 +227,6 @@ for cut in cuts:
             pl_row('+ рост предоплат клиентов за будущие месяцы', lambda mm: BRx[mm]['ddef']); pl_row('+ счета месяца за услуги прошлых месяцев', lambda mm: BRx[mm]['late_in'])
             pl_row('− услуги месяца, счёт выставлен позже', lambda mm: -BRx[mm]['late_out']); pl_row('ВЫРУЧКА КАК В ODOO', lambda mm: PLd[mm]['rev_odoo'])
             pl_row('EBITDA при выручке как в Odoo', lambda mm: PLd[mm]['ebitda_odoo'])
-            if PLm: add('fin_pl', 'f_rev_odoo', 'Выручка как в Odoo за месяц (по дате счёта)', PLm['rev_odoo'], 'm', 'up')
         for mm in MSx:
             for k2, nm in (('rev', 'Выручка'), ('cogs', 'Себестоимость'), ('opex', 'Операционные расходы'), ('ebitda', 'EBITDA')): ser('pl_chart', ml(mm), nm, PLd[mm][k2])
         if PLm:
@@ -235,6 +234,7 @@ for cut in cuts:
             add('fin_pl', 'f_opex', 'Операционные расходы за месяц', PLm['opex'], 'm', 'down'); add('fin_pl', 'f_ebitda', 'EBITDA за месяц', PLm['ebitda'], 'm', 'up')
             add('fin_pl', 'f_ebitda_pct', 'EBITDA, % выручки', PLm['ebitda'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
             add('fin_pl', 'f_ebitda_cum', 'EBITDA с апреля, накопленно', sum(PLd[mm]['ebitda'] for mm in MSx), 'm', 'up')
+            if 'rev_odoo' in PLm: add('fin_pl', 'f_rev_odoo', 'Справочно: выручка как в Odoo за месяц (по дате счёта)', PLm['rev_odoo'], 'm', 'up')
         CSx = FN['CS']; cm = CSx.get(m); MCx = FN.get('MC') or MSx
         if FN.get('MC'):
             for mm in MCx: ser('cash_tab', 'Источник', ml(mm), CSx[mm].get('src'))
