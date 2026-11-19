@@ -47,12 +47,12 @@ for x in CASH:
     else: COM[x['m']] += -x['s']
 # ---------- расходы: за период по видам и по дате оплаты ----------
 EP = collections.defaultdict(float); EPAY = collections.defaultdict(float); CAPEX = collections.defaultdict(float)
-CAPCAT = {'Техника и мебель'}
+CAPCAT = {'Техника и мебель'}; HOSTCAT = 'Хостинг и инфраструктура'   # хостинг уже в себестоимости
 for x in EXP:
     if x['pay'] <= CUT: EPAY[x['pay'][:7]] += x['amt']
     for m, v in split(x['amt'], x['d1'], x['d2']).items():
         if x['cat'] in CAPCAT: CAPEX[m] += v
-        else: EP[(x['plan'], m)] += v
+        elif x['cat'] != HOSTCAT: EP[(x['plan'], m)] += v
 COGS_FOT = {m: sum(COST['FOT_M'][k].get(m, 0) for k in ('SUP', 'ONP', 'ONS', 'KA')) for m in MS}
 HOST = {m: COST['HOST_M'].get(m, 0) for m in MS}
 # ---------- займы из реестра долгов пульта ----------
@@ -142,7 +142,7 @@ line('    Валовая маржа, %', ['=IF(#%d=0,0,#%d/#%d)'.replace('#', L(
 section(ws, 'A%d' % r, 'ОПЕРАЦИОННЫЕ РАСХОДЫ (за период, без того, что в себестоимости)'); r += 1
 OPX = [('Персонал (остальные отделы, налоги ЗП, обед, аутсорс)', {m: EP[('Затраты на персонал', m)] - COGS_FOT[m] for m in MS}),
        ('Административные расходы', {m: EP[('Административные расходы', m)] for m in MS}),
-       ('IT услуги (без хостинга)', {m: EP[('IT услуги', m)] - HOST[m] for m in MS}),
+       ('IT услуги (без хостинга)', {m: EP[('IT услуги', m)] for m in MS}),
        ('Операционные расходы', {m: EP[('Операционные расходы', m)] for m in MS}),
        ('Услуги связи и интернет', {m: EP[('Услуги связи и интернет', m)] for m in MS}),
        ('Комиссии платёжных систем (Payme, Click, Paynet)', {m: COM[m] for m in MS})]
