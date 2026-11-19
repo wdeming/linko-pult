@@ -78,7 +78,7 @@
 <section class="pl-doc" id="debts" data-doc="debts" hidden>
 <div class="pl-dochead"><h2 class="pl-h2">Долги компании</h2><div class="pl-actions"><button type="button" class="pl-btn pl-main" id="db-new" hidden>Новый долг</button><button type="button" class="pl-btn" id="db-xlsx">Скачать Excel</button></div></div>
 <p class="pl-file">Единый реестр долгов. Ведётся вручную здесь, из Odoo ничего не берётся и от срезов не зависит. Долги в долларах в итогах — по 12 000 сум/$. Записи не удаляются: ошибочные аннулируются с причиной, каждое изменение — в журнале.</p>
-<div class="pl-kpis" id="db-tiles"></div>
+<div class="pl-kpis" id="db-tiles"></div><details class="db-termsbox" open><summary>Условия займов: кому, под какой процент, что будет при сделке</summary><p class="pl-file" id="db-terms-note"></p><div class="db-terms" id="db-terms"></div></details>
 <div class="db-bar"><span class="pl-seg" role="group" aria-label="Какие долги показать"><button type="button" class="pl-segb" data-dbf="active" aria-pressed="true">Открытые</button><button type="button" class="pl-segb" data-dbf="closed" aria-pressed="false">Погашенные</button><button type="button" class="pl-segb" data-dbf="void" aria-pressed="false">Аннулированные</button><button type="button" class="pl-segb" data-dbf="all" aria-pressed="false">Все</button></span><input type="search" id="db-q" class="db-q" placeholder="Поиск: название, у кого, комментарий" aria-label="Поиск по долгам"></div>
 <div id="db-table"><p class="pl-file">Загружаю…</p></div>
 <details class="db-log db-logall"><summary>Журнал изменений</summary><div id="db-log"></div></details>

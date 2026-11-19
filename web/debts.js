@@ -7,6 +7,8 @@
   const money = (a, cur) => cur === 'USD' ? '$' + (Math.abs(a - Math.round(a)) < 0.005 ? nf0 : nf2).format(a) : nf0.format(a) + ' сум';
   const ru = (d) => d ? d.slice(8, 10) + '.' + d.slice(5, 7) + '.' + d.slice(0, 4) : '—';
   const when = (t) => t ? new Date(t).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
+  const nfr = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
+  const rateS = (r) => r == null ? '—' : r === 0 ? 'без %' : nfr.format(r) + '%';
   const ST = {open: ['Открыт', ''], overdue: ['Просрочен', 'bad'], closed: ['Погашен', 'ok'], void: ['Аннулирован', 'void']};
   let S = null, filter = 'active', q = '', cardId = null;
   const can = () => S && S.can === 'edit';
@@ -38,18 +40,30 @@
       tileBox('Вернули всего', money(live.reduce((a, d) => a + d.paid_uzs, 0), 'UZS'), 'погашено долгов: ' + live.filter((d) => d.status === 'closed').length),
       tileBox('Вернули в этом месяце', money(paidM, 'UZS'), takenM ? 'и взяли/добавили ' + money(takenM, 'UZS') : 'новых долгов в этом месяце нет'),
       tileBox('Просрочено', money(od.reduce((a, d) => a + d.left_uzs, 0), 'UZS'), od.length ? 'долгов: ' + od.length : 'просрочек нет', od.length ? 'bad' : ''));
+    const live2 = live.filter((d) => d.left > 0.004), totL = live2.reduce((a, d) => a + d.left_uzs, 0) || 1;
+    const grp = (fn) => { const g = new Map(); live2.forEach((d) => { const k = fn(d), v = g.get(k) || [0, 0]; v[0] += 1; v[1] += d.left_uzs; g.set(k, v); }); return [...g.entries()].sort((a, b) => b[1][1] - a[1][1]); };
+    const box = $('db-terms'); box.replaceChildren();
+    [['Связанная сторона', (d) => d.party || 'не указано'], ['При сделке', (d) => d.deal || 'не указано'], ['Ставка', (d) => d.rate == null ? 'не указано' : d.rate === 0 ? 'беспроцентные' : 'с процентами'],
+     ['Обеспечение', (d) => d.security || 'не указано'], ['Срок возврата', (d) => !d.due ? 'не указан' : (Date.parse(d.due) - Date.parse(S.today)) / 864e5 <= 91 ? 'в ближайшие 3 месяца' : 'позже 3 месяцев']].forEach(([t, fn]) => {
+      const c = el('div', 'db-term'); c.append(el('h4', 'db-h4', t));
+      grp(fn).forEach(([k, [n, v]]) => { const r = el('div', 'db-trow' + (/не указан/.test(k) ? ' db-tna' : '')), bar = el('i'); bar.style.width = Math.max(2, v / totL * 100) + '%';
+        r.append(el('span', '', k), el('b', '', money(v, 'UZS')), el('small', '', n + ' · ' + nf0.format(v / totL * 100) + '%'), bar); c.append(r); });
+      box.append(c);
+    });
+    const filled = live2.filter((d) => d.party && d.rate != null && d.deal).length;
+    $('db-terms-note').textContent = live2.length ? 'Условия (сторона, ставка, что при сделке) заполнены у ' + filled + ' из ' + live2.length + ' действующих долгов.' : '';
     let rows = S.debts.filter((d) => filter === 'all' ? true : filter === 'active' ? (d.status === 'open' || d.status === 'overdue') : filter === 'closed' ? d.status === 'closed' : d.status === 'void');
     if (q) rows = rows.filter((d) => (d.title + ' ' + d.creditor + ' ' + (d.kind || '') + ' ' + (d.note || '')).toLowerCase().includes(q));
     const order = {overdue: 0, open: 1, closed: 2, void: 3}; rows.sort((a, b) => order[a.status] - order[b.status] || (a.due || '9') .localeCompare(b.due || '9') || b.opened.localeCompare(a.opened));
     const w = el('div', 'pl-tw'), t = el('table', 'pl-tbl db-tbl'), hr = el('tr');
-    ['Долг', 'Тип', 'Дата', 'Было', 'Вернули', 'Осталось', 'Срок', 'Статус'].forEach((h) => hr.append(el('th', '', h)));
+    ['Долг', 'Тип', 'Сторона', 'Ставка', 'Дата', 'Было', 'Вернули', 'Осталось', 'Срок', 'Статус'].forEach((h) => hr.append(el('th', '', h)));
     const th = el('thead'); th.append(hr); const tb = el('tbody');
-    if (!rows.length) { const tr = el('tr'), td = el('td', 'db-empty', S.debts.length ? 'Ничего не найдено.' : (can() ? 'Долгов пока нет. Нажмите «Новый долг», чтобы завести первый.' : 'Долгов пока нет.')); td.colSpan = 8; tr.append(td); tb.append(tr); }
+    if (!rows.length) { const tr = el('tr'), td = el('td', 'db-empty', S.debts.length ? 'Ничего не найдено.' : (can() ? 'Долгов пока нет. Нажмите «Новый долг», чтобы завести первый.' : 'Долгов пока нет.')); td.colSpan = 10; tr.append(td); tb.append(tr); }
     rows.forEach((d) => {
       const tr = el('tr', 'db-row' + (d.void ? ' db-void' : '')); tr.tabIndex = 0; tr.setAttribute('role', 'button'); tr.setAttribute('aria-label', 'Открыть долг ' + d.title);
       const c1 = el('td'); c1.append(el('div', 'db-t', d.title), el('div', 'db-c', d.creditor + (d.ctype ? ' · ' + d.ctype : '')));
       const st = el('span', 'db-st ' + ST[d.status][1], ST[d.status][0]), c8 = el('td'); c8.append(st);
-      tr.append(c1, el('td', 'db-k', d.kind || ''), el('td', '', ru(d.opened)), el('td', '', money(d.taken, d.currency)), el('td', '', money(d.paid, d.currency)),
+      tr.append(c1, el('td', 'db-k', d.kind || ''), el('td', 'db-k', d.party || '—'), el('td', 'db-k', rateS(d.rate)), el('td', '', ru(d.opened)), el('td', '', money(d.taken, d.currency)), el('td', '', money(d.paid, d.currency)),
         el('td', 'db-left', money(d.left, d.currency)), el('td', d.status === 'overdue' ? 'db-bad' : '', d.due ? ru(d.due) : '—'), c8);
       tr.addEventListener('click', () => card(d.id)); tr.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); card(d.id); } });
       tb.append(tr);
@@ -57,7 +71,7 @@
     const vis = rows.filter((d) => !d.void);
     if (vis.length > 1) {
       const tr = el('tr', 'pl-totrow'), sum = (k) => money(vis.reduce((a, d) => a + d[k], 0), 'UZS');
-      tr.append(el('td', '', 'Итого, в сумах' + (vis.some((d) => d.currency === 'USD') ? ' ($ по 12 000)' : '')), el('td'), el('td'), el('td', '', sum('taken_uzs')), el('td', '', sum('paid_uzs')), el('td', 'db-left', sum('left_uzs')), el('td'), el('td'));
+      tr.append(el('td', '', 'Итого, в сумах' + (vis.some((d) => d.currency === 'USD') ? ' ($ по 12 000)' : '')), el('td'), el('td'), el('td'), el('td'), el('td', '', sum('taken_uzs')), el('td', '', sum('paid_uzs')), el('td', 'db-left', sum('left_uzs')), el('td'), el('td'));
       tb.append(tr);
     }
     t.append(th, tb); w.append(t); $('db-table').replaceChildren(w);
@@ -76,6 +90,8 @@
     box.append(nums);
     const f = el('dl', 'db-facts'); const fact = (a, b) => { if (b) f.append(el('dt', '', a), el('dd', '', b)); };
     fact('Дата долга', ru(d.opened)); fact('Срок возврата', d.due ? ru(d.due) + (d.status === 'overdue' ? ' — просрочен' : '') : 'не указан'); fact('Валюта', k ? 'доллары (в итогах по 12 000 сум/$)' : 'сумы');
+    fact('Связанная сторона', d.party || 'не указано'); fact('Ставка', d.rate == null ? 'не указано' : d.rate === 0 ? 'беспроцентный' : rateS(d.rate) + ' годовых');
+    fact('График возврата', d.schedule || 'не указан'); fact('Обеспечение', d.security || 'не указано'); fact('При сделке', d.deal || 'не указано');
     fact('Комментарий', d.note); fact('Заведён', when(d.created_at) + (d.created_by ? ' · ' + d.created_by : ''));
     if (d.void) fact('Аннулирован', when(d.void_at) + ' · ' + (d.void_by || '') + '. Причина: ' + d.void_reason);
     box.append(f);
@@ -145,7 +161,13 @@
       {name: 'kind', label: 'Тип долга', type: 'select', options: S.kinds, req: true, value: d ? d.kind : 'Займ'},
       {name: 'date', label: 'Дата долга', type: 'date', req: true, value: d ? d.opened : S.today, max: S.today}];
     if (isNew) F.push({name: 'currency', label: 'Валюта', type: 'cur', req: true}, {name: 'amount', label: 'Сумма долга', type: 'amount', req: true, cur: () => (ins ? ins.currency.value : 'UZS'), ph: '0'});
-    F.push({name: 'due', label: 'Срок возврата', type: 'date', value: d ? d.due || '' : ''}, {name: 'note', label: 'Комментарий', type: 'textarea', value: d ? d.note || '' : '', ph: 'условия, где договорились, номер договора…'});
+    F.push({name: 'due', label: 'Срок возврата', type: 'date', value: d ? d.due || '' : ''},
+      {name: 'party', label: 'Связанная сторона', type: 'select', options: S.parties, empty: true, value: d ? d.party || '' : ''},
+      {name: 'rate', label: 'Ставка, % годовых (0 — беспроцентный)', value: d && d.rate != null ? String(d.rate).replace('.', ',') : '', ph: 'например: 0 или 24'},
+      {name: 'schedule', label: 'График возврата', value: d ? d.schedule || '' : '', ph: 'например: единовременно в конце срока; ежемесячно по 50 млн'},
+      {name: 'security', label: 'Обеспечение', type: 'select', options: S.securities, empty: true, value: d ? d.security || '' : ''},
+      {name: 'deal', label: 'Что будет с займом при сделке', type: 'select', options: S.deals, empty: true, value: d ? d.deal || '' : ''},
+      {name: 'note', label: 'Комментарий', type: 'textarea', value: d ? d.note || '' : '', ph: 'договор, где договорились, детали залога…'});
     ins = form(isNew ? 'Новый долг' : 'Изменить долг', F, isNew ? 'Завести долг' : 'Сохранить',
       (v) => isNew ? api('/api/debts', v) : api('/api/debts/' + d.id, v), isNew ? null : 'Сумму здесь не меняют: если она неверна, аннулируйте операцию в карточке и внесите правильную.');
   }

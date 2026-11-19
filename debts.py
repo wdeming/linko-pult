@@ -3,13 +3,17 @@
 Долг = карточка (название, у кого взяли, тип, валюта, дата, срок) + операции: «взяли / добавили к долгу» и «выплата».
 Операции и долги не удаляются — только аннулируются с причиной. Каждое изменение пишется в журнал (кто и когда).
 Доступ: data/config.json → "perms": {"логин": {"debts": "edit" | "view" | "none"}}; если не указано — "edit"."""
-import os, sys, io, json, datetime
+import os, sys, io, json, datetime, collections
 from urllib.parse import quote
 from flask import Blueprint, request, session, jsonify, Response
 RATE = 12000
 KINDS = ['Займ', 'Поставщик / услуги', 'Аренда', 'Зарплата / сотрудники', 'Учредитель', 'Налоги и сборы', 'Прочее']
 CTYPES = ['Физлицо', 'Организация']
 CUR = {'UZS': 'сум', 'USD': '$'}
+PARTIES = ['Учредитель', 'Связанное лицо', 'Третье лицо']
+SECUR = ['Без обеспечения', 'Залог', 'Поручительство', 'Иное']
+DEAL = ['Конвертируется в долю', 'Погашается из средств сделки', 'Остаётся долгом компании', 'Прощается / списывается', 'Не решено']
+TERMS = (('party', PARTIES), ('security', SECUR), ('deal', DEAL))
 bp = Blueprint('debts', __name__)
 G = {}
 def install(app, db, now, cfg, calc):
@@ -24,6 +28,9 @@ def install(app, db, now, cfg, calc):
         create index if not exists debt_op_debt on debt_op(debt_id);
         create table if not exists debt_log(id integer primary key autoincrement, at text, who text, debt_id integer, op_id integer, action text, detail text);
         """)
+        have = {r[1] for r in c.execute('pragma table_info(debt)')}
+        for col, typ in (('rate', 'real'), ('schedule', 'text'), ('party', 'text'), ('security', 'text'), ('deal', 'text')):
+            if col not in have: c.execute('alter table debt add column %s %s' % (col, typ))
     app.register_blueprint(bp)
 def perm():
     p = (G['cfg'].get('perms') or {}).get(session.get('u') or '', {}) or {}
@@ -59,6 +66,18 @@ def amt(j, cur):
     if not (a > 0): raise Bad('Сумма должна быть больше нуля')
     if a > 1e13: raise Bad('Слишком большая сумма')
     return a
+def terms(j):
+    """Условия займа: ставка (% годовых, пусто — не указано), график, связанная сторона, обеспечение, что будет при сделке."""
+    raw = str(j.get('rate') if j.get('rate') is not None else '').replace(' ', '').replace(',', '.').replace('%', '')
+    if raw == '': rate = None
+    else:
+        try: rate = round(float(raw), 2)
+        except ValueError: raise Bad('Ставка должна быть числом, % годовых (0 — беспроцентный)')
+        if rate < 0 or rate > 200: raise Bad('Проверьте ставку: от 0 до 200% годовых')
+    t = {'rate': rate, 'schedule': txt(j, 'schedule', n=300)}
+    for k, opts in TERMS: t[k] = j.get(k) if j.get(k) in opts else None
+    return t
+rate_s = lambda r: '—' if r is None else ('беспроцентный' if r == 0 else ('%g%% годовых' % r).replace('.', ','))
 def money(a, cur):
     s = '{:,.2f}'.format(a) if cur == 'USD' else '{:,.0f}'.format(a)
     if s.endswith('.00'): s = s[:-3]
@@ -93,7 +112,7 @@ def api_list():
     need('view')
     with G['db']() as c:
         D = load(c); L = [dict(r) for r in c.execute('select * from debt_log order by id desc limit 300')]
-    return jsonify(can=perm(), rate=RATE, kinds=KINDS, ctypes=CTYPES, today=today(), debts=D, log=L)
+    return jsonify(can=perm(), rate=RATE, kinds=KINDS, ctypes=CTYPES, parties=PARTIES, securities=SECUR, deals=DEAL, today=today(), debts=D, log=L)
 @bp.route('/api/debts', methods=['POST'])
 def api_create():
     need('edit'); j = request.get_json(silent=True) or {}
@@ -102,14 +121,16 @@ def api_create():
     ctype = j.get('ctype') if j.get('ctype') in CTYPES else None; kind = j.get('kind') if j.get('kind') in KINDS else 'Прочее'
     opened, due, a, note = dt(j, 'date'), dt(j, 'due', False, True), amt(j, cur), txt(j, 'note', n=1000)
     if due and due < opened: raise Bad('Срок возврата раньше даты долга')
+    tm = terms(j)
     n, u = G['now'](), session.get('u')
     with G['db']() as c:
-        i = c.execute('insert into debt(title, creditor, ctype, kind, currency, opened, due, note, created_at, created_by, updated_at, updated_by) values(?,?,?,?,?,?,?,?,?,?,?,?)',
-                      (title, cred, ctype, kind, cur, opened, due, note, n, u, n, u)).lastrowid
+        i = c.execute('insert into debt(title, creditor, ctype, kind, currency, opened, due, note, created_at, created_by, updated_at, updated_by, rate, schedule, party, security, deal) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                      (title, cred, ctype, kind, cur, opened, due, note, n, u, n, u, tm['rate'], tm['schedule'], tm['party'], tm['security'], tm['deal'])).lastrowid
         o = c.execute("insert into debt_op(debt_id, op, date, amount, note, created_at, created_by) values(?,?,?,?,?,?,?)", (i, 'take', opened, a, 'Сумма долга при заведении', n, u)).lastrowid
         log(c, i, o, 'create', 'Новый долг «%s» — %s, %s от %s' % (title, cred, money(a, cur), ru(opened)))
     return jsonify(ok=True, id=i)
-FIELDS = [('title', 'Название'), ('creditor', 'У кого взяли'), ('ctype', 'Физлицо / организация'), ('kind', 'Тип'), ('due', 'Срок возврата'), ('note', 'Комментарий'), ('opened', 'Дата долга')]
+FIELDS = [('title', 'Название'), ('creditor', 'У кого взяли'), ('ctype', 'Физлицо / организация'), ('kind', 'Тип'), ('due', 'Срок возврата'), ('note', 'Комментарий'), ('opened', 'Дата долга'),
+          ('party', 'Связанная сторона'), ('rate', 'Ставка'), ('schedule', 'График возврата'), ('security', 'Обеспечение'), ('deal', 'При сделке')]
 @bp.route('/api/debts/<int:i>', methods=['POST'])
 def api_edit(i):
     need('edit'); j = request.get_json(silent=True) or {}
@@ -117,16 +138,17 @@ def api_edit(i):
         d = dict(one(c, i))
         if d['void']: raise Bad('Долг аннулирован — изменить нельзя')
         new = {'title': txt(j, 'title', True), 'creditor': txt(j, 'creditor', True), 'ctype': j.get('ctype') if j.get('ctype') in CTYPES else None,
-               'kind': j.get('kind') if j.get('kind') in KINDS else 'Прочее', 'due': dt(j, 'due', False, True), 'note': txt(j, 'note', n=1000), 'opened': dt(j, 'date')}
+               'kind': j.get('kind') if j.get('kind') in KINDS else 'Прочее', 'due': dt(j, 'due', False, True), 'note': txt(j, 'note', n=1000), 'opened': dt(j, 'date'), **terms(j)}
         if new['due'] and new['due'] < new['opened']: raise Bad('Срок возврата раньше даты долга')
-        ch = ['%s: «%s» → «%s»' % (lab, (ru(d[k]) if k in ('due', 'opened') else d[k]) or '—', (ru(new[k]) if k in ('due', 'opened') else new[k]) or '—') for k, lab in FIELDS if (d[k] or None) != (new[k] or None)]
+        sh = lambda k, v: ru(v) if k in ('due', 'opened') else rate_s(v) if k == 'rate' else v
+        ch = ['%s: «%s» → «%s»' % (lab, sh(k, d.get(k)) or '—', sh(k, new[k]) or '—') for k, lab in FIELDS if (d.get(k) if d.get(k) not in ('',) else None) != (new[k] if new[k] not in ('',) else None)]
         if not ch: return jsonify(ok=True, same=True)
         first = c.execute("select id from debt_op where debt_id=? and op='take' order by id limit 1", (i,)).fetchone()
         early = c.execute('select min(date) from debt_op where debt_id=? and void=0 and id<>?', (i, first[0] if first else 0)).fetchone()[0]
         if early and early < new['opened']: raise Bad('Есть операции раньше новой даты долга (%s) — сначала проверьте их' % ru(early))
         if first and new['opened'] != d['opened']: c.execute('update debt_op set date=? where id=?', (new['opened'], first[0]))
-        c.execute('update debt set title=?, creditor=?, ctype=?, kind=?, due=?, note=?, opened=?, updated_at=?, updated_by=? where id=?',
-                  (new['title'], new['creditor'], new['ctype'], new['kind'], new['due'], new['note'], new['opened'], G['now'](), session.get('u'), i))
+        c.execute('update debt set title=?, creditor=?, ctype=?, kind=?, due=?, note=?, opened=?, rate=?, schedule=?, party=?, security=?, deal=?, updated_at=?, updated_by=? where id=?',
+                  (new['title'], new['creditor'], new['ctype'], new['kind'], new['due'], new['note'], new['opened'], new['rate'], new['schedule'], new['party'], new['security'], new['deal'], G['now'](), session.get('u'), i))
         log(c, i, None, 'edit', 'Изменён долг «%s»: %s' % (new['title'], '; '.join(ch)))
     return jsonify(ok=True)
 @bp.route('/api/debts/<int:i>/void', methods=['POST'])
@@ -181,19 +203,35 @@ def api_xlsx():
     wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'Долги'; t = today()
     title(ws, 'A1', 'Долги компании на %s' % ru(t))
     header(ws, 3, ['№', 'Название', 'У кого взяли', 'Физлицо / организация', 'Тип', 'Валюта', 'Дата долга', 'Срок возврата', 'Было (взято)', 'Вернули', 'Осталось',
-                   'Осталось, сум (по 12 000)', 'Последняя выплата', 'Статус', 'Комментарий'])
+                   'Осталось, сум (по 12 000)', 'Последняя выплата', 'Статус', 'Связанная сторона', 'Ставка, % годовых', 'График возврата', 'Обеспечение', 'При сделке', 'Комментарий'])
     r = 4; DF = 'DD.MM.YYYY'; D_ = lambda s: datetime.date.fromisoformat(s) if s else None
     for n, d in enumerate(D, 1):
         if d['void']: continue
         cf = '"$"#,##0.00' if d['currency'] == 'USD' else NUM
         datarow(ws, r, [n, d['title'], d['creditor'], d['ctype'] or '', d['kind'] or '', d['currency'], D_(d['opened']), D_(d['due']), d['taken'], d['paid'], '=I%d-J%d' % (r, r),
-                        '=K%d*%d' % (r, RATE if d['currency'] == 'USD' else 1), D_(d['last_pay']), st[d['status']], d['note'] or ''],
-                fmts=[None, None, None, None, None, None, DF, DF, cf, cf, cf, NUM, DF, None, None], blue_inputs=False); r += 1
+                        '=K%d*%d' % (r, RATE if d['currency'] == 'USD' else 1), D_(d['last_pay']), st[d['status']],
+                        d.get('party') or 'не указано', (d['rate'] / 100) if d.get('rate') is not None else 'не указано', d.get('schedule') or '', d.get('security') or 'не указано', d.get('deal') or 'не указано', d['note'] or ''],
+                fmts=[None, None, None, None, None, None, DF, DF, cf, cf, cf, NUM, DF, None, None, '0.0%', None, None, None, None], blue_inputs=False); r += 1
     totalrow(ws, r, ['ИТОГО должны, сум', None, None, None, None, None, None, None, None, None, None, '=SUM(L4:L%d)' % (r - 1)], fmts=[None] * 11 + [NUM])
     notes(ws, r + 2, ['Источник: учёт долгов на пульте Linko (ведётся вручную, Odoo не используется). Выгрузка %s.' % ru(t),
                       'Долги в долларах в колонке «Осталось, сум» пересчитаны по 12 000 сум/$. Аннулированные долги не показаны (они есть в журнале).',
                       '«Было» — сумма долга при заведении плюс всё, что добавляли к долгу позже; «Вернули» — все выплаты.'])
-    widths(ws, {'A': 5, 'B': 30, 'C': 28, 'D': 14, 'E': 18, 'F': 8, 'G': 12, 'H': 12, 'I': 16, 'J': 16, 'K': 16, 'L': 18, 'M': 12, 'N': 12, 'O': 40}); ws.freeze_panes = 'C4'
+    widths(ws, {'A': 5, 'B': 30, 'C': 28, 'D': 14, 'E': 18, 'F': 8, 'G': 12, 'H': 12, 'I': 16, 'J': 16, 'K': 16, 'L': 18, 'M': 12, 'N': 12, 'O': 18, 'P': 12, 'Q': 30, 'R': 18, 'S': 28, 'T': 40}); ws.freeze_panes = 'C4'
+    # ---- итоги по условиям
+    ws = wb.create_sheet('Итоги по условиям'); title(ws, 'A1', 'Долги по условиям на %s (остаток, сум)' % ru(t))
+    header(ws, 3, ['Условие', 'Значение', 'Долгов', 'Остаток, сум', 'Доля остатка']); r = 4; live = [d for d in D if not d['void'] and d['left'] > 0.004]; tot = sum(d['left_uzs'] for d in live) or 1
+    for lab, fn in (('Связанная сторона', lambda d: d.get('party') or 'не указано'), ('При сделке', lambda d: d.get('deal') or 'не указано'), ('Обеспечение', lambda d: d.get('security') or 'не указано'),
+                    ('Ставка', lambda d: 'не указано' if d.get('rate') is None else 'беспроцентные' if d['rate'] == 0 else 'с процентами'),
+                    ('Срок возврата', lambda d: 'не указан' if not d['due'] else 'до %s (3 месяца)' % ru((datetime.date.today() + datetime.timedelta(days=91)).isoformat()) if d['due'] <= (datetime.date.today() + datetime.timedelta(days=91)).isoformat() else 'позже 3 месяцев')):
+        grp = collections.defaultdict(lambda: [0, 0.0])
+        for d in live: g = grp[fn(d)]; g[0] += 1; g[1] += d['left_uzs']
+        for k, (n_, v) in sorted(grp.items(), key=lambda z: -z[1][1]):
+            datarow(ws, r, [lab, k, n_, round(v), v / tot], fmts=[None, None, NUM, NUM, '0.0%'], blue_inputs=False); r += 1
+        r += 1
+    wr = [d for d in live if d.get('rate')]
+    if wr: datarow(ws, r, ['Средневзвешенная ставка по займам с процентами', '', len(wr), round(sum(d['left_uzs'] for d in wr)), sum(d['rate'] * d['left_uzs'] for d in wr) / sum(d['left_uzs'] for d in wr) / 100], fmts=[None, None, NUM, NUM, '0.0%'], blue_inputs=False); r += 1
+    notes(ws, r + 1, ['Только действующие долги с остатком > 0. Доллары — по 12 000 сум/$. «Не указано» — условие ещё не заполнено в карточке долга.'])
+    widths(ws, {'A': 22, 'B': 34, 'C': 10, 'D': 18, 'E': 14})
     ws = wb.create_sheet('Операции'); title(ws, 'A1', 'Все операции по долгам')
     header(ws, 3, ['Дата', 'Долг', 'У кого взяли', 'Операция', 'Сумма', 'Валюта', 'Сумма, сум (по 12 000)', 'Комментарий', 'Внёс', 'Когда внесено', 'Аннулирована', 'Причина аннулирования'])
     r = 4; ops = sorted(((o, d) for d in D for o in d['ops']), key=lambda x: (x[0]['date'], x[0]['id']))

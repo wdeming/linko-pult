@@ -252,3 +252,12 @@ body[data-mode="fin"] .pl-cutbar{background:linear-gradient(135deg,color-mix(in 
 @media print{.pl-top{position:static}.pl-modes{display:none}}
 .pl-fig.pl-wide .pl-tw{max-height:none}
 .pl-status{flex-wrap:nowrap;align-items:flex-start}.pl-status .pl-lamp{flex:none;margin-top:4px}
+/* условия долгов */
+.db-termsbox{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--radius-lg);box-shadow:var(--shadow-1);padding:12px 18px}
+.db-termsbox summary{cursor:pointer;font:700 15px/1.4 var(--font-head);padding:4px 0}
+.db-terms{display:grid;gap:14px 22px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));margin-top:8px}
+.db-term .db-h4{margin:0 0 6px}
+.db-trow{position:relative;display:grid;grid-template-columns:1fr auto;gap:0 8px;padding:6px 8px;border-radius:8px;overflow:hidden;font-size:13px}
+.db-trow>*{position:relative;z-index:1}.db-trow b{font-weight:600;text-align:right}.db-trow small{grid-column:1/-1;color:var(--color-fg-muted);font-size:11.5px}
+.db-trow i{position:absolute;left:0;top:0;bottom:0;z-index:0;background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:8px}
+.db-tna{color:var(--color-fg-muted)}.db-tna i{background:color-mix(in srgb,var(--color-bad) 9%,transparent)}
