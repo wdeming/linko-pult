@@ -93,7 +93,15 @@ def index():
 def api_me(): return jsonify(user=session.get('u'), role=role())
 @app.after_request
 def nocache(r):
-    r.headers.setdefault('Cache-Control', 'no-store'); return r
+    r.headers.setdefault('Cache-Control', 'no-store')
+    # сжатие ответов (данные пульта ~1 МБ): быстрее на телефоне
+    if (not r.direct_passthrough and r.status_code == 200 and 'gzip' in request.headers.get('Accept-Encoding', '')
+            and (r.mimetype in ('application/json', 'text/html', 'text/css', 'application/javascript', 'text/javascript')) and 'Content-Encoding' not in r.headers):
+        data = r.get_data()
+        if len(data) > 1500:
+            import gzip as _gz
+            r.set_data(_gz.compress(data, 5)); r.headers['Content-Encoding'] = 'gzip'; r.headers['Vary'] = 'Accept-Encoding'; r.headers['Content-Length'] = str(len(r.get_data()))
+    return r
 @app.route('/api/data')
 def api_data():
     with db() as c: rows = c.execute('select * from cutdata order by cut').fetchall()
