@@ -224,7 +224,7 @@ for cut in cuts:
         pl_row('Капитальные расходы (не в EBITDA)', lambda mm: FN.get('CAPEX', {}).get(mm, 0))
         if FN.get('BR'):     # мостик: выручка по периодам услуги → как в Odoo (по дате счёта, вся сумма сразу)
             BRx = FN['BR']
-            pl_row('+ рост предоплат клиентов за будущие месяцы', lambda mm: BRx[mm]['ddef']); pl_row('+ счета месяца за услуги прошлых месяцев', lambda mm: BRx[mm]['late_in'])
+            pl_row('+ рост оплаченного вперёд за будущие месяцы', lambda mm: BRx[mm]['ddef']); pl_row('+ счета месяца за услуги прошлых месяцев', lambda mm: BRx[mm]['late_in'])
             pl_row('− услуги месяца, счёт выставлен позже', lambda mm: -BRx[mm]['late_out']); pl_row('ВЫРУЧКА КАК В ODOO', lambda mm: PLd[mm]['rev_odoo'])
             pl_row('EBITDA при выручке как в Odoo', lambda mm: PLd[mm]['ebitda_odoo'])
         for mm in MSx:
@@ -257,7 +257,7 @@ for cut in cuts:
         for mm in FN['MR']:
             ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Признано', sum(RECx.get('%s|%s' % (k, mm), 0) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')))
             ser('rev_lines', ml(mm), 'Выставлено', FN['INV'][mm]); ser('rev_lines', ml(mm), 'Получено', FN['IN'][mm])
-            ser('rev_def', ml(mm), 'Отложенная выручка', FN['DEF'][mm])
+            ser('rev_def', ml(mm), 'Оплачено вперёд', FN['DEF'][mm])
             ser('rev_sfa', ml(mm), 'Признано SFA', rkx('Подписки SFA', mm))
         for b, v in FN['AR'].items(): ser('ar_age', b, 'Сумма', v)
         HI = FN.get('HIST')      # история с 2025: файл финансиста, пакет, Odoo
@@ -279,7 +279,7 @@ for cut in cuts:
                 if lab is None: continue
                 ser('bal_tab', lab, 'Сумма', v); ser('bal_tab', lab, 'Источник и как посчитано', src); BV[lab] = v
             add('fin_bal', 'b_cash', 'Деньги', BV['Денежные средства'], 'm', 'up'); add('fin_bal', 'b_liab', 'Обязательства всего', BV['ИТОГО ОБЯЗАТЕЛЬСТВА'], 'm', 'down')
-            add('fin_bal', 'b_loans', 'из них займы', BV['Займы'], 'm', 'down'); add('fin_bal', 'b_def', 'из них предоплаты клиентов', BV['Предоплаты клиентов за будущие месяцы'], 'm', '')
+            add('fin_bal', 'b_loans', 'из них займы', BV['Займы'], 'm', 'down'); add('fin_bal', 'b_def', 'Справочно: оплачено вперёд за будущие месяцы', BV['Справочно: оплачено клиентами вперёд за будущие месяцы'], 'm', '')
             add('fin_bal', 'b_eq', 'Капитал и накопленный результат', BV['Капитал и накопленный результат'], 'm', 'up')
             for row in FN.get('SRCS', []):
                 ser('src_tab', row[0], 'Источник', row[1]); ser('src_tab', row[0], 'Учёт выручки', row[2]); ser('src_tab', row[0], 'Как посчитано', row[3])
@@ -287,7 +287,7 @@ for cut in cuts:
                 for col, k2 in (('Источник А', 'a_lab'), ('Сумма А', 'a'), ('Источник Б', 'b_lab'), ('Сумма Б', 'b'), ('Разница', 'diff'), ('Что взято и почему', 'note')): ser('src_check', x['what'], col, x[k2])
         add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rkx(k, m) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')), 'm', 'up')
         add('fin_rev', 'f_inv', 'Выставлено за месяц', FN['INV'][m], 'm', 'up'); add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
-        add('fin_rev', 'f_def', 'Отложенная выручка на конец месяца', FN['DEF'][m], 'm', '')
+        add('fin_rev', 'f_def', 'Оплачено вперёд за будущие месяцы', FN['DEF'][m], 'm', '')
         add('fin_rev', 'f_ar', 'Неоплаченные счета (дебиторка)', sum(FN['AR'].values()), 'm', 'down'); add('fin_rev', 'f_ar90', 'из них просрочены больше 90 дней', FN['AR']['91–180 дней'] + FN['AR']['больше 180 дней'], 'm', 'down')
         add('fin_rev', 'f_unm', 'Поступления, не привязанные к счетам', FN['UNM']['s'], 'm', 'down')
         SGx = FN['SEG']
