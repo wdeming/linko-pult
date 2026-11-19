@@ -35,7 +35,7 @@ for cut in cuts:
     def add(doc, key, label, value, kind='n', good='', prod=''):
         metrics.append({'id': '%s.%s' % (cut, key), 'cut': cut, 'doc': doc, 'key': key, 'label': label, 'value': None if value is None else round(float(value), 6), 'kind': kind, 'good': good, 'prod': prod})
     def ser(chart, x, s, v):
-        series.append({'id': '%s.%s.%s.%s' % (cut, chart, x, s), 'cut': cut, 'chart': chart, 'x': x, 's': s, 'v': None if v is None else round(float(v), 6)})
+        series.append({'id': '%s.%s.%s.%s' % (cut, chart, x, s), 'cut': cut, 'chart': chart, 'x': x, 's': s, 'v': None if v is None else v if isinstance(v, str) else round(float(v), 6)})
     mov = lambda e, p: M['mov'].get('%s|%s|%s' % (p, m, e), 0)
     tm = R['MRR'][PP] + R['MRR'][F]; tmj = tm
     # --- сводка и MRR
@@ -222,6 +222,12 @@ for cut in cuts:
         pl_row('ОПЕРАЦИОННЫЕ РАСХОДЫ', lambda mm: PLd[mm]['opex']); pl_row('EBITDA', lambda mm: PLd[mm]['ebitda'])
         pl_row('EBITDA, % выручки', lambda mm: (PLd[mm]['ebitda'], PLd[mm]['rev']), True)
         pl_row('Капитальные расходы (не в EBITDA)', lambda mm: FN.get('CAPEX', {}).get(mm, 0))
+        if FN.get('BR'):     # мостик: выручка по периодам услуги → как в Odoo (по дате счёта, вся сумма сразу)
+            BRx = FN['BR']
+            pl_row('+ рост предоплат клиентов за будущие месяцы', lambda mm: BRx[mm]['ddef']); pl_row('+ счета месяца за услуги прошлых месяцев', lambda mm: BRx[mm]['late_in'])
+            pl_row('− услуги месяца, счёт выставлен позже', lambda mm: -BRx[mm]['late_out']); pl_row('ВЫРУЧКА КАК В ODOO', lambda mm: PLd[mm]['rev_odoo'])
+            pl_row('EBITDA при выручке как в Odoo', lambda mm: PLd[mm]['ebitda_odoo'])
+            if PLm: add('fin_pl', 'f_rev_odoo', 'Выручка как в Odoo за месяц (по дате счёта)', PLm['rev_odoo'], 'm', 'up')
         for mm in MSx:
             for k2, nm in (('rev', 'Выручка'), ('cogs', 'Себестоимость'), ('opex', 'Операционные расходы'), ('ebitda', 'EBITDA')): ser('pl_chart', ml(mm), nm, PLd[mm][k2])
         if PLm:
@@ -229,13 +235,15 @@ for cut in cuts:
             add('fin_pl', 'f_opex', 'Операционные расходы за месяц', PLm['opex'], 'm', 'down'); add('fin_pl', 'f_ebitda', 'EBITDA за месяц', PLm['ebitda'], 'm', 'up')
             add('fin_pl', 'f_ebitda_pct', 'EBITDA, % выручки', PLm['ebitda'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
             add('fin_pl', 'f_ebitda_cum', 'EBITDA с апреля, накопленно', sum(PLd[mm]['ebitda'] for mm in MSx), 'm', 'up')
-        CSx = FN['CS']; cm = CSx.get(m)
+        CSx = FN['CS']; cm = CSx.get(m); MCx = FN.get('MC') or MSx
+        if FN.get('MC'):
+            for mm in MCx: ser('cash_tab', 'Источник', ml(mm), CSx[mm].get('src'))
         for lab, k2 in (('Остаток денег на начало месяца', 'open'), ('Поступления от клиентов', 'in'), ('Комиссии платёжных систем', 'com'), ('Расходы по дате оплаты', 'exp'),
                         ('ОПЕРАЦИОННЫЙ ДЕНЕЖНЫЙ ПОТОК', 'op'), ('Займы получены', 'lt'), ('Займы возвращены', 'lp'), ('Прочие движения и расхождения учёта', 'oth'),
                         ('Остаток денег на конец месяца', 'end'), ('Долг по займам на конец месяца', 'debt')):
             sg = -1 if k2 in ('com', 'exp', 'lp') else 1
-            for mm in MSx: ser('cash_tab', lab, ml(mm), (CSx[mm][k2] or 0) * sg if CSx[mm][k2] is not None else None)
-        for mm in MSx:
+            for mm in MCx: ser('cash_tab', lab, ml(mm), (CSx[mm][k2] or 0) * sg if CSx[mm][k2] is not None else None)
+        for mm in MCx:
             ser('cash_flow', ml(mm), 'Операционный поток', CSx[mm]['op']); ser('cash_flow', ml(mm), 'Займы, нетто', CSx[mm]['lt'] - CSx[mm]['lp'])
             ser('cash_bal', ml(mm), 'Деньги на конец месяца', CSx[mm]['end'])
         for a, v in sorted(FN['ACC'].items(), key=lambda z: -z[1]): ser('cash_acc', a[:40], 'Остаток', v)
@@ -252,6 +260,31 @@ for cut in cuts:
             ser('rev_def', ml(mm), 'Отложенная выручка', FN['DEF'][mm])
             ser('rev_sfa', ml(mm), 'Признано SFA', rkx('Подписки SFA', mm))
         for b, v in FN['AR'].items(): ser('ar_age', b, 'Сумма', v)
+        HI = FN.get('HIST')      # история с 2025: файл финансиста, пакет, Odoo
+        if HI and HI['M']:
+            for lab, kind, vals, tot in HI['ROWS']:
+                for mm in HI['M']: ser('hist_tab', lab, ml(mm), vals.get(mm))
+                for yk in HI['Y']: ser('hist_tab', lab, yk, tot.get(yk))
+            HR = {r_[0]: r_ for r_ in HI['ROWS']}
+            for mm in HI['M']:
+                ser('hist_chart', ml(mm), 'Выручка', HR['ВЫРУЧКА'][2][mm]); ser('hist_chart', ml(mm), 'Расходы', HR['РАСХОДЫ ВСЕГО'][2][mm]); ser('hist_chart', ml(mm), 'EBITDA', HR['EBITDA'][2][mm])
+            for yk in HI['Y']:
+                y4 = yk.split()[1].rstrip(',')
+                add('fin_hist', 'h_rev_' + y4, 'Выручка, ' + yk.replace('Итого ', ''), HR['ВЫРУЧКА'][3].get(yk), 'm', 'up')
+                add('fin_hist', 'h_ebitda_' + y4, 'EBITDA, ' + yk.replace('Итого ', ''), HR['EBITDA'][3].get(yk), 'm', 'up')
+            add('fin_hist', 'h_capex_tap', 'Техника и Tap 2025 — вынесены под EBITDA', (HR['Капрасходы: техника и мебель (не в EBITDA)'][3].get(HI['Y'][0]) or 0) + (HR['Финансирование Tap (не в EBITDA)'][3].get(HI['Y'][0]) or 0), 'm', '')
+        if FN.get('BAL'):
+            BV = {}
+            for lab, v, src in FN['BAL'] + [(None, None, None)] + FN['BREF']:
+                if lab is None: continue
+                ser('bal_tab', lab, 'Сумма', v); ser('bal_tab', lab, 'Источник и как посчитано', src); BV[lab] = v
+            add('fin_bal', 'b_cash', 'Деньги', BV['Денежные средства'], 'm', 'up'); add('fin_bal', 'b_liab', 'Обязательства всего', BV['ИТОГО ОБЯЗАТЕЛЬСТВА'], 'm', 'down')
+            add('fin_bal', 'b_loans', 'из них займы', BV['Займы'], 'm', 'down'); add('fin_bal', 'b_def', 'из них предоплаты клиентов', BV['Предоплаты клиентов за будущие месяцы'], 'm', '')
+            add('fin_bal', 'b_eq', 'Капитал и накопленный результат', BV['Капитал и накопленный результат'], 'm', 'up')
+            for row in FN.get('SRCS', []):
+                ser('src_tab', row[0], 'Источник', row[1]); ser('src_tab', row[0], 'Учёт выручки', row[2]); ser('src_tab', row[0], 'Как посчитано', row[3])
+            for x in FN.get('CHK', []):
+                for col, k2 in (('Источник А', 'a_lab'), ('Сумма А', 'a'), ('Источник Б', 'b_lab'), ('Сумма Б', 'b'), ('Разница', 'diff'), ('Что взято и почему', 'note')): ser('src_check', x['what'], col, x[k2])
         add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rkx(k, m) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')), 'm', 'up')
         add('fin_rev', 'f_inv', 'Выставлено за месяц', FN['INV'][m], 'm', 'up'); add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
         add('fin_rev', 'f_def', 'Отложенная выручка на конец месяца', FN['DEF'][m], 'm', '')

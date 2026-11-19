@@ -36,6 +36,11 @@ out['subs'] = {str(r['id']): {'p': r['partner_id'], 'prod': r['prod'], 'lic': fl
      (select sum(sol.product_uom_qty) from sale_order_line sol where sol.order_id=so.id and sol.product_id in (25,26,41,42)) lic,
      (select sum(sol.product_uom_qty) from sale_order_line sol where sol.order_id=so.id and sol.product_id in (24,40,43,32)) kas
    from sale_order so where so.id in (select distinct order_id from sale_order_log)""")}
+# 5. для баланса: сальдо счетов дебиторов клиентов и 201000 (отсрочка выручки Odoo) на срез; валютные строки — amount_currency × 12 000
+out['gl'] = {r['k']: float(r['s'] or 0) for r in db.query(f"""select case when a.account_type='asset_receivable' then 'ar' else a.code end k,
+     sum(case when l.currency_id=1 then l.amount_currency*{K} else l.balance end) s
+   from account_move_line l join account_account a on a.id=l.account_id
+   where l.parent_state='posted' and l.date <= date '{CUT}' and (a.account_type='asset_receivable' or a.code='201000') group by 1""")}
 json.dump(out, open(J('fin'), 'w'), ensure_ascii=False)
 print('строк счетов', len(out['inv']), '| с периодом', sum(1 for x in out['inv'] if x['d1']), '| счетов дебиторки', len(out['ar']), '| непривязанных платежей', out['unmatched'],
-      '| подписок', len(out['subs']), '| записей журнала', len(out['log']))
+      '| подписок', len(out['subs']), '| записей журнала', len(out['log']), '| сальдо', out['gl'])

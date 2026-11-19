@@ -1,5 +1,5 @@
 (() => {
-  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_cash', 'fin_rev', 'fin_seg', 'fin_ret'];
+  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_hist', 'fin_cash', 'fin_bal', 'fin_rev', 'fin_seg', 'fin_ret', 'fin_src'];
   // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
   const CH = {
     mrr_end: ['stack', 'm', {row: 'Итого MRR'}], mrr_jerr: ['hbar', 'm', {col: true}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
@@ -16,11 +16,14 @@
     rev_lines: ['line', 'm', {}], rev_def: ['stack', 'm', {}], ar_age: ['hbar', 'm', {col: true}],
     seg_tab: ['table', 'm', {bold: /^Всего$/, cf: {'Клиентов': 'n', 'Доля MRR': 'p', 'NRR с 31.01': 'p', 'GRR с 31.01': 'p', 'NRR за год (пересчёт)': 'p', 'Ушли клиентов с 31.01': 'p', 'Потери MRR за 3 мес.': 'p'}}],
     seg_nrr: ['group', 'p', {}], ret_prod: ['table', 'p', {bold: /^Всего$/, cf: {'Клиентов на 31.01': 'n', 'MRR на 31.01': 'm', 'MRR этих клиентов на срез': 'm'}}], ret_curve: ['line', 'p', {}],
+    hist_tab: ['table', 'm', {bold: /^[А-ЯЁA-Z][А-ЯЁA-Z ]+$/, pct: /%/}], hist_chart: ['group', 'm', {}], bal_tab: ['table', 'm', {bold: /^ИТОГО/}],
+    src_tab: ['table', 'm', {}], src_check: ['table', 'm', {}],
     ret_con: ['stack', 'm', {row: 'Потери всего', col: true}], ret_month: ['table', 'p', {}], coh_money: ['table', 'p', {heat: true, cf: {'Подписок': 'n', 'MRR старта': 'm'}}]};
   const view = {}; let msgText = '';
   const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
   const nfd = (d) => new Intl.NumberFormat('ru-RU', {minimumFractionDigits: d, maximumFractionDigits: d});
   function fmt(v, k) {
+    if (typeof v === 'string') return v;
     if (v == null || isNaN(v)) return '—';
     if (k === 'p') return nfd(1).format(v * 100) + '%';
     if (k === 'd1') return nfd(1).format(v);
@@ -105,7 +108,7 @@
     xs.forEach((x) => {
       const tr = el('tr', o.bold && o.bold.test(x) ? 'pl-strong' : ''); tr.append(el('td', '', x));
       cols.forEach((s) => {
-        const val = cell(x, s), kk = kf(x, s), td = el('td', (s === o.row || s === 'Итого' ? 'pl-tot' : '') + (val != null && val < 0 && kk !== 'p' ? ' pl-neg' : ''), fmt(val, kk));
+        const val = cell(x, s), kk = kf(x, s), td = el('td', (s === o.row || s === 'Итого' || /^Итого /.test(s) ? 'pl-tot' : '') + (typeof val === 'string' ? (val.length > 24 ? ' pl-txt' : ' pl-str') : '') + (typeof val === 'number' && val < 0 && kk !== 'p' ? ' pl-neg' : ''), fmt(val, kk));
         if (o.heat && kk === 'p' && val != null) { const a = Math.max(0, Math.min(1, val)); td.style.background = 'color-mix(in srgb, var(--accent) ' + Math.round(8 + a * 34) + '%, transparent)'; }
         tr.append(td);
       });
