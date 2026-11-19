@@ -84,7 +84,7 @@ def seg(c2):
         return 'SFA: лицензии не указаны' if l <= 0 else 'SFA: 1–5 агентов' if l <= 5 else 'SFA: 6–20 агентов' if l <= 20 else 'SFA: 21–50 агентов' if l <= 50 else 'SFA: 51+ агентов'
     return 'POS: 1 касса' if c2['kas'] <= 1 else 'POS: 2+ кассы'
 SEGS = ['SFA: 1–5 агентов', 'SFA: 6–20 агентов', 'SFA: 21–50 агентов', 'SFA: 51+ агентов', 'SFA: лицензии не указаны', 'POS: 1 касса', 'POS: 2+ кассы']
-M0 = '2026-02'; NMON = MON.index(LAST_M) - MON.index(M0)
+M0 = '2026-01'; NMON = int(LAST_M[5:7]) - 1   # база подписок загружена в Odoo в январе 2026: 31.01 — самая ранняя полная точка
 L3 = MON[max(0, MON.index(LAST_M) - 3)]   # MRR 3 месяца назад
 SG = {s: collections.defaultdict(float) for s in SEGS}
 for p, c2 in CL.items():
@@ -115,6 +115,48 @@ BK = ['не просрочено', 'до 30 дней', '31–90 дней', '91�
 for x in F['ar']:
     dd = (D(CUT) - D(x['due'])).days; b = BK[0] if dd <= 0 else BK[1] if dd <= 30 else BK[2] if dd <= 90 else BK[3] if dd <= 180 else BK[4]
     AR[b] += x['res']; ARN[b] += 1
+# ---------- NRR / GRR за весь доступный период: с 31.01.2026 (база подписок загружена в журнал MRR в январе) ----------
+MLIST = ['2026-01'] + [m for m in MON if m <= LAST_M]; KY = 12 / NMON if NMON else None
+MRR_END['2026-01'] = sum(mrr_at(o, '2026-01') for o in cum_sub if SUBS.get(str(o), {}).get('prod') in ('POS', 'SFA'))
+RET = {}
+for lab, pf in (('Всего', None), ('SFA', 'SFA'), ('POS', 'POS')):
+    cp = collections.defaultdict(list)
+    for o, s2 in SUBS.items():
+        if s2['prod'] in ('POS', 'SFA') and s2['p'] and (pf is None or s2['prod'] == pf): cp[s2['p']].append(int(o))
+    base0 = {p: v for p, v in ((p, sum(mrr_at(o, M0) for o in ss)) for p, ss in cp.items()) if v > 0}; s0 = sum(base0.values())
+    curve = []
+    for m in MLIST:
+        now = {p: sum(mrr_at(o, m) for o in cp[p]) for p in base0}
+        curve.append({'m': m, 'nrr': sum(max(v, 0) for v in now.values()) / s0, 'grr': sum(min(max(now[p], 0), base0[p]) for p in base0) / s0, 'lost': sum(1 for v in now.values() if v <= 0)})
+    lc = curve[-1]
+    RET[lab] = {'n0': len(base0), 'mrr0': s0, 'mrr_now': lc['nrr'] * s0, 'nrr': lc['nrr'], 'grr': lc['grr'], 'nrr_y': lc['nrr'] ** KY if KY else None, 'grr_y': lc['grr'] ** KY if KY else None,
+                'lost': lc['lost'] / len(base0) if base0 else None, 'curve': curve}
+# сокращения: «колебания» (позже вернули расширением той же подписки) и настоящие потери
+SPL = {m: collections.defaultdict(float) for m in MLIST[1:]}
+EV = collections.defaultdict(list); ORD = {'15_contraction': 0, '1_expansion': 1, '2_churn': 2, '0_creation': 3}
+for r in LOG:
+    if MLIST[1] <= r['m'] <= LAST_M and SUBS.get(str(r['o']), {}).get('prod') in ('POS', 'SFA'): EV[r['o']].append((r['m'], ORD.get(r['et'], 9), r['et'], r['a']))
+for o, evs in EV.items():
+    lots = []
+    for m, _, et, a in sorted(evs):
+        g = SPL[m]
+        if et == '15_contraction': g['con'] += -a; lots.append([m, -a])
+        elif et == '1_expansion':
+            g['exp'] += a; left = a
+            while lots and left > 0:
+                tk = min(lots[0][1], left); SPL[lots[0][0]]['con_back'] += tk; g['exp_back'] += tk; left -= tk; lots[0][1] -= tk
+                if lots[0][1] <= 1e-6: lots.pop(0)
+        elif et == '2_churn': g['churn'] += -a; lots = []
+        elif et == '0_creation': g['new'] += a
+MONTHLY = {}
+for i, m in enumerate(MLIST[1:]):
+    g = SPL[m]; st = MRR_END[MLIST[i]]; cr = g['con'] - g['con_back']
+    MONTHLY[m] = {'start': st, 'new': g['new'], 'exp': g['exp'], 'exp_back': g['exp_back'], 'con': g['con'], 'con_back': g['con_back'], 'con_real': cr, 'churn': g['churn'],
+                  'grr': 1 - (g['churn'] + g['con']) / st if st else None, 'grr_adj': 1 - (g['churn'] + cr) / st if st else None, 'nrr': 1 + (g['exp'] - g['con'] - g['churn']) / st if st else None}
+import math
+_adj = [x['grr_adj'] for x in MONTHLY.values() if x['grr_adj']]; _rep = [x['grr'] for x in MONTHLY.values() if x['grr']]
+GRR_ADJ_Y = math.prod(_adj) ** (12 / len(_adj)) if _adj else None; GRR_REP_Y = math.prod(_rep) ** (12 / len(_rep)) if _rep else None
+CON_T = sum(x['con'] for x in MONTHLY.values()); CON_B = sum(x['con_back'] for x in MONTHLY.values())
 # ================= Excel =================
 wb = openpyxl.Workbook(); wb.remove(wb.active)
 fm = lambda n: [None] + [NUM] * n
@@ -216,7 +258,7 @@ widths(ws, {'A': 46, **{L(cc): 17 for cc in range(2, 11)}}); ws.freeze_panes = '
 # ---- 4. Сегменты ----
 ws = wb.create_sheet('Сегменты клиентов')
 title(ws, 'A1', 'Сегменты клиентов по размеру: удержание и отток по деньгам (на %s)' % CUT_RU)
-header(ws, 3, ['Сегмент', 'Клиентов на срез', 'MRR на срез', 'Доля MRR', 'Лицензий / касс', 'Клиентов на 28.02', 'MRR на 28.02', 'MRR этих клиентов на срез', 'NRR с 28.02', 'GRR с 28.02', 'NRR в пересчёте на год', 'Ушли клиентов с 28.02', 'Потери MRR за 3 мес. (отток + сокращения)'])
+header(ws, 3, ['Сегмент', 'Клиентов на срез', 'MRR на срез', 'Доля MRR', 'Лицензий / касс', 'Клиентов на 31.01', 'MRR на 31.01', 'MRR этих клиентов на срез', 'NRR с 31.01', 'GRR с 31.01', 'NRR в пересчёте на год', 'Ушли клиентов с 31.01', 'Потери MRR за 3 мес. (отток + сокращения)'])
 r = 4; SR = {}
 def segrow(lab, g, bold=False):
     global r
@@ -232,15 +274,38 @@ for m, cdata in COH.items():
     datarow(ws, r, ['%s 2026' % RUS[m], cdata['n'], round(cdata['start'])] + cdata['k'], fmts=[None, NUM, NUM] + [PCT] * len(cdata['k']), blue_inputs=False); r += 1
 notes(ws, r + 1, [
   'Размер клиента — число лицензий SFA (агентов) во всех его подписках SFA; клиенты только с POS — по числу касс. Число лицензий — по текущему составу подписок (у ушедших — по последнему).',
-  'NRR / GRR — по клиентам, у которых был MRR на 28.02.2026: их MRR на срез ÷ MRR на 28.02 (GRR — без учёта роста сверх 28.02). Это %d месяцев; «в пересчёте на год» = NRR^(12/%d). Честный годовой NRR будет с февраля 2027 — журнал MRR в Odoo ведётся с конца 2025.' % (NMON, NMON),
+  'NRR / GRR — по клиентам, у которых был MRR на 31.01.2026: их MRR на срез ÷ MRR на 31.01 (GRR — без учёта роста сверх 31.01). Это %d месяцев; «в пересчёте на год» = NRR^(12/%d). Полные 12 месяцев будут на срез 31.01.2027 — база подписок загружена в журнал MRR Odoo в январе 2026.' % (NMON, NMON),
   'Потери за 3 мес. — все отрицательные движения MRR (отток и сокращения) за последние 3 месяца ÷ MRR сегмента 3 месяца назад.',
   'Когорты — подписки по месяцу создания; М0 = 100%% MRR на конец месяца подключения, дальше — доля этого MRR на конец каждого следующего месяца (с расширениями и сокращениями). Всё по журналу MRR Odoo.'])
 widths(ws, {'A': 34, **{L(cc): 15 for cc in range(2, 16)}}); ws.freeze_panes = 'B4'
+# ---- 5. NRR и GRR за год ----
+ws = wb.create_sheet('NRR и GRR за год')
+title(ws, 'A1', 'Удержание выручки (NRR / GRR) за весь доступный период: с 31.01.2026 по %s' % CUT_RU)
+header(ws, 3, ['Продукт', 'Клиентов на 31.01', 'MRR на 31.01', 'MRR этих клиентов на срез', 'NRR за %d мес.' % NMON, 'GRR за %d мес.' % NMON, 'NRR в пересчёте на год', 'GRR в пересчёте на год', 'Ушли клиентов'])
+r = 4
+for lab in ('SFA', 'POS', 'Всего'):
+    x = RET[lab]; (totalrow if lab == 'Всего' else datarow)(ws, r, [lab, x['n0'], round(x['mrr0']), round(x['mrr_now']), x['nrr'], x['grr'], x['nrr_y'], x['grr_y'], x['lost']], fmts=[None, NUM, NUM, NUM, PCT, PCT, PCT, PCT, PCT]); r += 1
+r += 1; header(ws, r, ['Конец месяца', 'NRR с 31.01 (всего)', 'GRR с 31.01 (всего)', 'NRR SFA', 'GRR SFA', 'NRR POS', 'GRR POS']); r += 1
+for i, m in enumerate(MLIST):
+    datarow(ws, r, ['%s 2026' % (RUS.get(m) or 'Январь'), RET['Всего']['curve'][i]['nrr'], RET['Всего']['curve'][i]['grr'], RET['SFA']['curve'][i]['nrr'], RET['SFA']['curve'][i]['grr'], RET['POS']['curve'][i]['nrr'], RET['POS']['curve'][i]['grr']], fmts=[None] + [PCT] * 6, blue_inputs=False); r += 1
+r += 1; header(ws, r, ['Месяц', 'MRR на начало', 'Новые', 'Расширения всего', 'в т.ч. возврат после сокращения', 'Сокращения всего', 'в т.ч. вернули позже (колебания агентов)', 'Настоящие сокращения', 'Отток', 'GRR месяца', 'GRR месяца без колебаний', 'NRR месяца']); r += 1; r1 = r
+for m, x in MONTHLY.items():
+    datarow(ws, r, ['%s 2026' % RUS[m], round(x['start']), round(x['new']), round(x['exp']), round(x['exp_back']), round(-x['con']), round(-x['con_back']), round(-x['con_real']), round(-x['churn']), x['grr'], x['grr_adj'], x['nrr']],
+            fmts=[None] + [NUM] * 8 + [PCT] * 3, blue_inputs=False); r += 1
+totalrow(ws, r, ['ИТОГО'] + [None] + ['=SUM(%s%d:%s%d)' % (L(cc), r1, L(cc), r - 1) for cc in range(3, 10)], fmts=[None] + [NUM] * 8); r += 1
+datarow(ws, r, ['GRR за год из месячных: как в отчёте / без колебаний', GRR_REP_Y, GRR_ADJ_Y], fmts=[None, PCT, PCT], blue_inputs=False)
+notes(ws, r + 2, [
+  'Журнал изменений MRR в Odoo полноценно ведётся с января 2026: тогда в него загружена вся база подписок (483 подписки, ~461 млн MRR). Поэтому 31.01.2026 — самая ранняя точка, от которой можно мерить удержание; полные 12 месяцев будут на срез 31.01.2027.',
+  'NRR / GRR за период — по клиентам, у которых был MRR на 31.01.2026: их MRR на срез ÷ MRR на 31.01 (GRR — без роста сверх уровня 31.01). «В пересчёте на год» = значение ^ (12 / %d).' % NMON,
+  'Колебания агентов: сокращение, которое позже вернулось расширением той же подписки (клиент временно уменьшил число лицензий и снова увеличил). Настоящие сокращения — то, что не вернулось к срезу. Сокращения последних месяцев ещё могут вернуться.',
+  'GRR месяца «как в отчёте» = 1 − (отток + все сокращения) ÷ MRR на начало месяца. «Без колебаний» — в сокращениях только настоящие потери. Перемножать месячный GRR как в отчёте до 12 месяцев некорректно: колебания агентов попадают в потери, хотя возвращаются.',
+  'Источник: журнал изменений MRR Odoo (sale.order.log), доллары по 12 000 сум/$; клиент — партнёр подписки; продукт — POS / SFA.'])
+widths(ws, {'A': 28, **{L(cc): 17 for cc in range(2, 13)}}); ws.freeze_panes = 'B4'
 fn = OUTP('Финансы_для_банка_%s_2026_%s.xlsx' % (PERIOD.replace('–', '-'), SUF)); wb.save(fn)
 res = {'CAPEX': {m: CAPEX[m] for m in MS}, 'MS': MS, 'MR': MR, 'PL': PL, 'REC': {'%s|%s' % kk: v for kk, v in REC.items() if kk[1] in MR}, 'INV': {m: INV[m] for m in MR}, 'IN': {m: IN[m] for m in MR}, 'MRR': MRR_END,
        'DEF': {m: DEF.get(m, 0) for m in MR}, 'OPX': {lab: v for lab, v in OPX}, 'COGS_FOT': COGS_FOT, 'HOST': HOST, 'CS': CS, 'AVG3': avg3, 'LOANS_OK': LOANS_OK,
        'ACC': {('%s · %s' % (code, ACC[code]['name'])): bal_at(code, LAST_M) for code in ACC}, 'AR': {b: AR[b] for b in BK}, 'ARN': {b: ARN[b] for b in BK}, 'UNM': F['unmatched'],
-       'SEG': SR, 'SEGS': SEGS, 'COH': COH, 'NMON': NMON}
+       'SEG': SR, 'SEGS': SEGS, 'COH': COH, 'NMON': NMON, 'RET': RET, 'MONTHLY': MONTHLY, 'GRR_ADJ_Y': GRR_ADJ_Y, 'GRR_REP_Y': GRR_REP_Y, 'CON_T': CON_T, 'CON_B': CON_B}
 json.dump(res, open(J('res_fin'), 'w'), ensure_ascii=False)
 print(fn)
 for m in MS: print(m, {k: round(v / 1e6, 1) for k, v in PL[m].items()}, '| деньги', {k: round((v or 0) / 1e6, 1) for k, v in CS[m].items()})
@@ -249,3 +314,6 @@ for m in MR: print(m, 'MRR', round(MRR_END[m] / 1e6, 1), 'rec', round(recm(m) / 
 for s, v in SR.items(): print(s, {k: (round(x, 3) if isinstance(x, float) and abs(x) < 10 else round(x / 1e6, 1) if isinstance(x, float) else x) for k, x in v.items()})
 print('AR', {b: round(AR[b] / 1e6, 1) for b in BK}, F['unmatched'])
 for m, cdata in COH.items(): print(m, cdata['n'], round(cdata['start'] / 1e6, 1), [round(x, 2) for x in cdata['k']])
+print('RET', {k: {kk: (round(v, 3) if isinstance(v, float) and abs(v) < 10 else v) for kk, v in x.items() if kk != 'curve'} for k, x in RET.items()})
+for m, x in MONTHLY.items(): print(m, {k: (round(v / 1e6, 1) if abs(v) > 10 else round(v, 3)) for k, v in x.items() if v is not None})
+print('GRR год как в отчёте', GRR_REP_Y, 'без колебаний', GRR_ADJ_Y, 'сокращения вернулись', CON_B / CON_T if CON_T else None)

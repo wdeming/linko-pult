@@ -260,18 +260,37 @@ for cut in cuts:
         SGx = FN['SEG']
         for sname in FN['SEGS'] + ['Всего']:
             g = SGx[sname]
-            for col, v in (('Клиентов', g['n']), ('MRR', g['mrr']), ('Доля MRR', g['mrr'] / SGx['Всего']['mrr'] if SGx['Всего']['mrr'] else None), ('NRR с 28.02', g['nrr']), ('GRR с 28.02', g['grr']),
-                           ('NRR за год (пересчёт)', g['nrr_y']), ('Ушли клиентов с 28.02', g['lost']), ('Потери MRR за 3 мес.', g['loss3'])):
+            for col, v in (('Клиентов', g['n']), ('MRR', g['mrr']), ('Доля MRR', g['mrr'] / SGx['Всего']['mrr'] if SGx['Всего']['mrr'] else None), ('NRR с 31.01', g['nrr']), ('GRR с 31.01', g['grr']),
+                           ('NRR за год (пересчёт)', g['nrr_y']), ('Ушли клиентов с 31.01', g['lost']), ('Потери MRR за 3 мес.', g['loss3'])):
                 ser('seg_tab', sname, col, v)
-            if sname != 'Всего': ser('seg_nrr', sname, 'NRR с 28.02', g['nrr']); ser('seg_nrr', sname, 'GRR с 28.02', g['grr'])
+            if sname != 'Всего': ser('seg_nrr', sname, 'NRR с 31.01', g['nrr']); ser('seg_nrr', sname, 'GRR с 31.01', g['grr'])
         for cm2, cd2 in FN['COH'].items():
             lab = ml(cm2); ser('coh_money', lab, 'Подписок', cd2['n']); ser('coh_money', lab, 'MRR старта', cd2['start'])
             for i, v in enumerate(cd2['k']): ser('coh_money', lab, 'М%d' % i, v)
         tg = SGx['Всего']
-        add('fin_seg', 'f_nrr', 'NRR с 28.02, всего', tg['nrr'], 'p', 'up'); add('fin_seg', 'f_grr', 'GRR с 28.02, всего', tg['grr'], 'p', 'up')
-        add('fin_seg', 'f_nrr_y', 'NRR за год (пересчёт с %d мес.)' % FN['NMON'], tg['nrr_y'], 'p', 'up'); add('fin_seg', 'f_lost', 'Ушли клиентов с 28.02', tg['lost'], 'p', 'down')
+        add('fin_seg', 'f_nrr', 'NRR с 31.01, всего', tg['nrr'], 'p', 'up'); add('fin_seg', 'f_grr', 'GRR с 31.01, всего', tg['grr'], 'p', 'up')
+        add('fin_seg', 'f_nrr_y', 'NRR за год (пересчёт с %d мес.)' % FN['NMON'], tg['nrr_y'], 'p', 'up'); add('fin_seg', 'f_lost', 'Ушли клиентов с 31.01', tg['lost'], 'p', 'down')
         big = [s2 for s2 in FN['SEGS'] if '51+' in s2 or '21–50' in s2]
         if big: add('fin_seg', 'f_big', 'Доля MRR клиентов от 21 агента', sum(SGx[s2]['mrr'] for s2 in big) / tg['mrr'] if tg['mrr'] else None, 'p', '')
+        if FN.get('RET'):
+            RT = FN['RET']; nm_ = FN['NMON']
+            for lab in ('SFA', 'POS', 'Всего'):
+                x = RT[lab]
+                for col, v in (('Клиентов на 31.01', x['n0']), ('MRR на 31.01', x['mrr0']), ('MRR этих клиентов на срез', x['mrr_now']), ('NRR за %d мес.' % nm_, x['nrr']), ('GRR за %d мес.' % nm_, x['grr']),
+                               ('NRR за год (пересчёт)', x['nrr_y']), ('GRR за год (пересчёт)', x['grr_y']), ('Ушли клиентов', x['lost'])):
+                    ser('ret_prod', lab, col, v)
+            for i, c3 in enumerate(RT['Всего']['curve']):
+                lab = 'янв 26' if c3['m'] == '2026-01' else ml(c3['m'])
+                ser('ret_curve', lab, 'NRR всего', c3['nrr']); ser('ret_curve', lab, 'GRR всего', c3['grr'])
+                ser('ret_curve', lab, 'NRR SFA', RT['SFA']['curve'][i]['nrr']); ser('ret_curve', lab, 'NRR POS', RT['POS']['curve'][i]['nrr'])
+            for mm, x in FN['MONTHLY'].items():
+                ser('ret_con', ml(mm), 'Колебания (вернули позже)', x['con_back']); ser('ret_con', ml(mm), 'Настоящие сокращения', x['con_real']); ser('ret_con', ml(mm), 'Отток', x['churn'])
+                ser('ret_month', ml(mm), 'GRR месяца', x['grr']); ser('ret_month', ml(mm), 'GRR без колебаний', x['grr_adj']); ser('ret_month', ml(mm), 'NRR месяца', x['nrr'])
+            tv = RT['Всего']
+            add('fin_ret', 'r_nrr', 'NRR с 31.01, %d мес., всего' % nm_, tv['nrr'], 'p', 'up'); add('fin_ret', 'r_grr', 'GRR с 31.01, %d мес., всего' % nm_, tv['grr'], 'p', 'up')
+            add('fin_ret', 'r_nrr_y', 'NRR за год (пересчёт), всего', tv['nrr_y'], 'p', 'up'); add('fin_ret', 'r_grr_y', 'GRR за год (пересчёт), всего', tv['grr_y'], 'p', 'up')
+            add('fin_ret', 'r_nrr_sfa', 'NRR за год (пересчёт), SFA', RT['SFA']['nrr_y'], 'p', 'up', F); add('fin_ret', 'r_nrr_pos', 'NRR за год (пересчёт), POS', RT['POS']['nrr_y'], 'p', 'up', PP)
+            add('fin_ret', 'r_conback', 'Сокращения, которые потом вернулись', FN['CON_B'] / FN['CON_T'] if FN['CON_T'] else None, 'p', 'up')
     # --- оргструктура
     add('org', 'staff', 'Штат, человек', sum(x['n'] for x in fot), 'n', ''); add('org', 'payroll', 'Оклады на руки в месяц', sum(x['sal'] for x in fot), 'm', 'down')
     add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tmj, 'p', 'down')
