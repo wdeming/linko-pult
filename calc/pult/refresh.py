@@ -4,10 +4,13 @@
 import os, sys, subprocess, json, datetime
 P = os.path.dirname(os.path.abspath(__file__)); ROOT = os.path.dirname(P)
 cuts = sys.argv[1].split(','); docs = (sys.argv[2] if len(sys.argv) > 2 else 'all').split(',')
-ALL = ['mrr', 'churn', 'clients', 'multi', 'top20', 'cost', 'metrics', 'calls', 'org', 'cash', 'exp']
+ALL = ['mrr', 'churn', 'clients', 'multi', 'top20', 'cost', 'metrics', 'calls', 'org', 'cash', 'exp', 'fin']
 if 'all' in docs: docs = ALL
 if 'multi' in docs and 'clients' not in docs: docs.append('clients')
 if 'metrics' in docs and 'cost' not in docs: docs.append('cost')
+if 'fin' in docs:
+    for d0 in ('cost', 'cash', 'exp'):
+        if d0 not in docs: docs.insert(0, d0)
 RUN = "import sys,runpy; sys.path.insert(0,%r); sys.path.insert(1,%r); runpy.run_path(sys.argv[1], run_name='__main__')" % (P, ROOT)
 def run(script, env):
     r = subprocess.run([sys.executable, '-c', RUN, script], cwd=ROOT, env=env, capture_output=True, text=True, timeout=170)
@@ -16,8 +19,8 @@ log = []
 for cut in cuts:
     out = os.path.join(P, 'work', cut); os.makedirs(out, exist_ok=True)
     env = dict(os.environ, LINKO_CUT=cut, LINKO_OUT=out, PYTHONIOENCODING='utf-8')
-    for s in ('extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', 'extract_oct31_cash.py', 'extract_oct31_exp.py', os.path.join(P, 'extract_staff.py')): run(s, env)
-    for d in ('clients', 'multi', 'top20', 'cost', 'metrics', 'mrr', 'churn', 'calls', 'cash', 'exp'):
+    for s in ('extract_oct31.py', 'extract_oct31_mkt.py', 'extract_oct31_churn.py', 'extract_oct31_calls.py', 'extract_oct31_cash.py', 'extract_oct31_exp.py', 'extract_oct31_fin.py', os.path.join(P, 'extract_staff.py')): run(s, env)
+    for d in ('clients', 'multi', 'top20', 'cost', 'metrics', 'mrr', 'churn', 'calls', 'cash', 'exp', 'fin'):
         if d in docs: run('gen_oct31_%s.py' % d, env)
     st = os.path.join(out, 'stamp.json'); old = json.load(open(st)) if os.path.exists(st) else {}
     now = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')

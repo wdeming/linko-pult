@@ -10,7 +10,7 @@ PP, F = 'POS', 'SFA'
 DOCS = {'mrr': 'MRR_и_когортное_удержание_2026_на_%s.xlsx', 'churn': 'Отток_подписок_причины_%s_2026_на_%s.xlsx', 'clients': 'Клиентская_база_продукты_сегменты_на_%s.xlsx',
         'multi': 'Клиенты_с_несколькими_подписками_на_%s.xlsx', 'top20': 'Концентрация_выручки_и_условия_топ20_на_%s.xlsx', 'cost': 'Себестоимость_поддержки_внедрения_инфраструктуры_на_%s.xlsx',
         'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx',
-        'cash': 'Поступления_денег_%s_2026_на_%s.xlsx', 'exp': 'Расходы_кэшфло_и_за_период_%s_2026_на_%s.xlsx'}
+        'cash': 'Поступления_денег_%s_2026_на_%s.xlsx', 'exp': 'Расходы_кэшфло_и_за_период_%s_2026_на_%s.xlsx', 'fin': 'Финансы_для_банка_%s_2026_на_%s.xlsx'}
 MANUAL = {'org': 'Оргструктура_Linktrade_на_%s.xlsx', 'revenue': 'Выручка_по_продуктам_и_типам_%s_2026_на_%s.xlsx'}
 metrics, series = [], []
 def revenue(cut, ddmm, per):
@@ -200,6 +200,78 @@ for cut in cuts:
             if a == m: cats[c3][1] += v
         for c3, (va, vb) in sorted(cats.items(), key=lambda z: -max(z[1])):
             if abs(va) + abs(vb) >= 1: ser('exp_cat', c3[:40], 'По дате оплаты', va); ser('exp_cat', c3[:40], 'За период', vb)
+    # --- финансы для банка: P&L, деньги, выручка, сегменты
+    fp = os.path.join(dn, 'x_%s_res_fin.json' % t)
+    if os.path.exists(fp):
+        FN = json.load(open(fp, encoding='utf-8')); MSx = FN['MS']; PLm = FN['PL'].get(m); RECx = FN['REC']
+        rk = lambda k, mm: RECx.get('%s|%s' % (k, mm), 0)
+        def pl_row(lab, f, pct=False):
+            tot_n = tot_d = 0.0
+            for mm in MSx:
+                v = f(mm)
+                if pct: n_, d_ = v; ser('pl_tab', lab, ml(mm), n_ / d_ if d_ else None); tot_n += n_; tot_d += d_
+                else: ser('pl_tab', lab, ml(mm), v); tot_n += v
+            ser('pl_tab', lab, 'Итого', (tot_n / tot_d if tot_d else None) if pct else tot_n)
+        P = FN['PL']
+        pl_row('Подписки SFA', lambda mm: rk('Подписки SFA', mm)); pl_row('Подписки POS', lambda mm: rk('Подписки POS', mm)); pl_row('Разовые работы и прочее', lambda mm: rk('Разовые работы и прочее', mm))
+        pl_row('ВЫРУЧКА', lambda mm: P[mm]['rev'])
+        pl_row('ФОТ поддержки, внедрения, ключевых клиентов', lambda mm: FN['COGS_FOT'][mm]); pl_row('Хостинг и инфраструктура', lambda mm: FN['HOST'][mm])
+        pl_row('СЕБЕСТОИМОСТЬ', lambda mm: P[mm]['cogs']); pl_row('ВАЛОВАЯ ПРИБЫЛЬ', lambda mm: P[mm]['gp'])
+        pl_row('Валовая маржа, %', lambda mm: (P[mm]['gp'], P[mm]['rev']), True)
+        for lab, v in FN['OPX'].items(): pl_row(lab.split(' (')[0] if lab.startswith('Персонал') or lab.startswith('Комиссии') else lab, lambda mm, v=v: v[mm])
+        pl_row('ОПЕРАЦИОННЫЕ РАСХОДЫ', lambda mm: P[mm]['opex']); pl_row('EBITDA', lambda mm: P[mm]['ebitda'])
+        pl_row('EBITDA, % выручки', lambda mm: (P[mm]['ebitda'], P[mm]['rev']), True)
+        pl_row('Капитальные расходы (не в EBITDA)', lambda mm: FN.get('CAPEX', {}).get(mm, 0))
+        for mm in MSx:
+            for k2, nm in (('rev', 'Выручка'), ('cogs', 'Себестоимость'), ('opex', 'Операционные расходы'), ('ebitda', 'EBITDA')): ser('pl_chart', ml(mm), nm, P[mm][k2])
+        if PLm:
+            add('fin_pl', 'f_rev', 'Выручка за месяц (признанная)', PLm['rev'], 'm', 'up'); add('fin_pl', 'f_gm', 'Валовая маржа', PLm['gp'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
+            add('fin_pl', 'f_opex', 'Операционные расходы за месяц', PLm['opex'], 'm', 'down'); add('fin_pl', 'f_ebitda', 'EBITDA за месяц', PLm['ebitda'], 'm', 'up')
+            add('fin_pl', 'f_ebitda_pct', 'EBITDA, % выручки', PLm['ebitda'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
+            add('fin_pl', 'f_ebitda_cum', 'EBITDA с апреля, накопленно', sum(P[mm]['ebitda'] for mm in MSx), 'm', 'up')
+        CSx = FN['CS']; cm = CSx.get(m)
+        for lab, k2 in (('Остаток денег на начало месяца', 'open'), ('Поступления от клиентов', 'in'), ('Комиссии платёжных систем', 'com'), ('Расходы по дате оплаты', 'exp'),
+                        ('ОПЕРАЦИОННЫЙ ДЕНЕЖНЫЙ ПОТОК', 'op'), ('Займы получены', 'lt'), ('Займы возвращены', 'lp'), ('Прочие движения и расхождения учёта', 'oth'),
+                        ('Остаток денег на конец месяца', 'end'), ('Долг по займам на конец месяца', 'debt')):
+            sg = -1 if k2 in ('com', 'exp', 'lp') else 1
+            for mm in MSx: ser('cash_tab', lab, ml(mm), (CSx[mm][k2] or 0) * sg if CSx[mm][k2] is not None else None)
+        for mm in MSx:
+            ser('cash_flow', ml(mm), 'Операционный поток', CSx[mm]['op']); ser('cash_flow', ml(mm), 'Займы, нетто', CSx[mm]['lt'] - CSx[mm]['lp'])
+            ser('cash_bal', ml(mm), 'Деньги на конец месяца', CSx[mm]['end'])
+        for a, v in sorted(FN['ACC'].items(), key=lambda z: -z[1]): ser('cash_acc', a[:40], 'Остаток', v)
+        if cm:
+            add('fin_cash', 'f_cash', 'Деньги на конец месяца', cm['end'], 'm', 'up'); add('fin_cash', 'f_op', 'Операционный денежный поток за месяц', cm['op'], 'm', 'up')
+            add('fin_cash', 'f_avg3', 'Средний операционный поток за 3 месяца', FN['AVG3'], 'm', 'up')
+            add('fin_cash', 'f_runway', 'Запас денег, месяцев', cm['end'] / -FN['AVG3'] if FN['AVG3'] < 0 else None, 'd1', 'up')
+            if FN.get('LOANS_OK'):
+                add('fin_cash', 'f_loans_m', 'Займы получены за месяц', cm['lt'], 'm', ''); add('fin_cash', 'f_debt', 'Долг по займам на конец месяца', cm['debt'], 'm', 'down')
+                add('fin_cash', 'f_loans_cum', 'Займы с апреля, нетто', sum(CSx[mm]['lt'] - CSx[mm]['lp'] for mm in MSx), 'm', '')
+        for mm in FN['MR']:
+            ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Признано', sum(RECx.get('%s|%s' % (k, mm), 0) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')))
+            ser('rev_lines', ml(mm), 'Выставлено', FN['INV'][mm]); ser('rev_lines', ml(mm), 'Получено', FN['IN'][mm])
+            ser('rev_def', ml(mm), 'Отложенная выручка', FN['DEF'][mm])
+            ser('rev_sfa', ml(mm), 'Признано SFA', rk('Подписки SFA', mm))
+        for b, v in FN['AR'].items(): ser('ar_age', b, 'Сумма', v)
+        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rk(k, m) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')), 'm', 'up')
+        add('fin_rev', 'f_inv', 'Выставлено за месяц', FN['INV'][m], 'm', 'up'); add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
+        add('fin_rev', 'f_def', 'Отложенная выручка на конец месяца', FN['DEF'][m], 'm', '')
+        add('fin_rev', 'f_ar', 'Неоплаченные счета (дебиторка)', sum(FN['AR'].values()), 'm', 'down'); add('fin_rev', 'f_ar90', 'из них просрочены больше 90 дней', FN['AR']['91–180 дней'] + FN['AR']['больше 180 дней'], 'm', 'down')
+        add('fin_rev', 'f_unm', 'Поступления, не привязанные к счетам', FN['UNM']['s'], 'm', 'down')
+        SGx = FN['SEG']
+        for sname in FN['SEGS'] + ['Всего']:
+            g = SGx[sname]
+            for col, v in (('Клиентов', g['n']), ('MRR', g['mrr']), ('Доля MRR', g['mrr'] / SGx['Всего']['mrr'] if SGx['Всего']['mrr'] else None), ('NRR с 28.02', g['nrr']), ('GRR с 28.02', g['grr']),
+                           ('NRR за год (пересчёт)', g['nrr_y']), ('Ушли клиентов с 28.02', g['lost']), ('Потери MRR за 3 мес.', g['loss3'])):
+                ser('seg_tab', sname, col, v)
+            if sname != 'Всего': ser('seg_nrr', sname, 'NRR с 28.02', g['nrr']); ser('seg_nrr', sname, 'GRR с 28.02', g['grr'])
+        for cm2, cd2 in FN['COH'].items():
+            lab = ml(cm2); ser('coh_money', lab, 'Подписок', cd2['n']); ser('coh_money', lab, 'MRR старта', cd2['start'])
+            for i, v in enumerate(cd2['k']): ser('coh_money', lab, 'М%d' % i, v)
+        tg = SGx['Всего']
+        add('fin_seg', 'f_nrr', 'NRR с 28.02, всего', tg['nrr'], 'p', 'up'); add('fin_seg', 'f_grr', 'GRR с 28.02, всего', tg['grr'], 'p', 'up')
+        add('fin_seg', 'f_nrr_y', 'NRR за год (пересчёт с %d мес.)' % FN['NMON'], tg['nrr_y'], 'p', 'up'); add('fin_seg', 'f_lost', 'Ушли клиентов с 28.02', tg['lost'], 'p', 'down')
+        big = [s2 for s2 in FN['SEGS'] if '51+' in s2 or '21–50' in s2]
+        if big: add('fin_seg', 'f_big', 'Доля MRR клиентов от 21 агента', sum(SGx[s2]['mrr'] for s2 in big) / tg['mrr'] if tg['mrr'] else None, 'p', '')
     # --- оргструктура
     add('org', 'staff', 'Штат, человек', sum(x['n'] for x in fot), 'n', ''); add('org', 'payroll', 'Оклады на руки в месяц', sum(x['sal'] for x in fot), 'm', 'down')
     add('org', 'payroll_share', 'Оклады, % от MRR', sum(x['sal'] for x in fot) / tmj, 'p', 'down')

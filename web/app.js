@@ -1,5 +1,5 @@
 (() => {
-  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts'];
+  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_cash', 'fin_rev', 'fin_seg'];
   // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
   const CH = {
     mrr_end: ['stack', 'm', {row: 'Итого MRR'}], mrr_jerr: ['hbar', 'm', {col: true}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
@@ -10,7 +10,12 @@
     cost_parts: ['hbar', 'm', {col: 'Себестоимость всего'}], hosting: ['group', 'm', {col: true}], cost_m: ['stack', 'm', {row: 'Себестоимость всего', col: true}], unit: ['group', 'm', {}],
     staff_dep: ['hbar', 'n', {col: true}], payroll_dep: ['hbar', 'm', {col: true}], calls_m: ['stack', 'n', {row: 'Всего', col: true}], calls_ops: ['hbar', 'n', {col: true}], calls_open: ['hbar', 'n', {col: true}],
     cash_prod: ['stack', 'm', {row: 'Поступило всего', col: true}], cash_meth: ['stack', 'm', {row: 'Всего', col: true}], cash_comm: ['stack', 'm', {col: true}],
-    exp_cash: ['stack', 'm', {row: 'Всего', col: true}], exp_period: ['stack', 'm', {row: 'Всего', col: true}], exp_flow: ['group', 'm', {col: true}], exp_cat: ['hbar', 'm', {col: true}]};
+    exp_cash: ['stack', 'm', {row: 'Всего', col: true}], exp_period: ['stack', 'm', {row: 'Всего', col: true}], exp_flow: ['group', 'm', {col: true}], exp_cat: ['hbar', 'm', {col: true}],
+    pl_tab: ['table', 'm', {bold: /^[А-ЯЁA-Z][А-ЯЁA-Z ]+$/, pct: /%/}], pl_chart: ['group', 'm', {col: true}],
+    cash_tab: ['table', 'm', {bold: /^[А-ЯЁ ]+$|^Остаток/}], cash_flow: ['group', 'm', {col: true}], cash_bal: ['line', 'm', {}], cash_acc: ['hbar', 'm', {col: 'Итого денег'}],
+    rev_lines: ['line', 'm', {}], rev_def: ['stack', 'm', {}], ar_age: ['hbar', 'm', {col: true}],
+    seg_tab: ['table', 'm', {bold: /^Всего$/, cf: {'Клиентов': 'n', 'Доля MRR': 'p', 'NRR с 28.02': 'p', 'GRR с 28.02': 'p', 'NRR за год (пересчёт)': 'p', 'Ушли клиентов с 28.02': 'p', 'Потери MRR за 3 мес.': 'p'}}],
+    seg_nrr: ['group', 'p', {}], coh_money: ['table', 'p', {heat: true, cf: {'Подписок': 'n', 'MRR старта': 'm'}}]};
   const view = {}; let msgText = '';
   const nf0 = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
   const nfd = (d) => new Intl.NumberFormat('ru-RU', {minimumFractionDigits: d, maximumFractionDigits: d});
@@ -93,9 +98,18 @@
     const w = el('div', 'pl-tw'), t = el('table', 'pl-tbl'), hr = el('tr'), v = (x, s) => m.get(x + '|' + s);
     const cols = ss.slice(); if (o.row && ss.length > 1) cols.push(o.row);
     const cell = (x, s) => (s === o.row && ss.length > 1) ? d3.sum(ss, (z) => v(x, z) || 0) : v(x, s);
-    hr.append(el('th', '', ''), ...cols.map((s) => el('th', s === o.row ? 'pl-tot' : '', s)));
+    const kf = (x, s) => (o.cf && o.cf[s]) || (o.pct && o.pct.test(x) ? 'p' : k);
+    hr.append(el('th', '', ''), ...cols.map((s) => el('th', s === o.row || s === 'Итого' ? 'pl-tot' : '', s)));
     const tb = el('tbody');
-    xs.forEach((x) => { const tr = el('tr'); tr.append(el('td', '', x), ...cols.map((s) => el('td', s === o.row ? 'pl-tot' : '', fmt(cell(x, s), k)))); tb.append(tr); });
+    xs.forEach((x) => {
+      const tr = el('tr', o.bold && o.bold.test(x) ? 'pl-strong' : ''); tr.append(el('td', '', x));
+      cols.forEach((s) => {
+        const val = cell(x, s), kk = kf(x, s), td = el('td', (s === o.row || s === 'Итого' ? 'pl-tot' : '') + (val != null && val < 0 && kk !== 'p' ? ' pl-neg' : ''), fmt(val, kk));
+        if (o.heat && kk === 'p' && val != null) { const a = Math.max(0, Math.min(1, val)); td.style.background = 'color-mix(in srgb, var(--accent) ' + Math.round(8 + a * 34) + '%, transparent)'; }
+        tr.append(td);
+      });
+      tb.append(tr);
+    });
     if (o.col) { const tr = el('tr', 'pl-totrow'); tr.append(el('td', '', o.col === true ? 'Итого' : o.col), ...cols.map((s) => el('td', '', fmt(d3.sum(xs, (x) => cell(x, s) || 0), k)))); tb.append(tr); }
     const th = el('thead'); th.append(hr); t.append(th, tb); w.append(t); e.append(w);
   }
@@ -105,7 +119,7 @@
     if (!data.length) { e.append(el('p', 'pl-file', 'Для этого среза данных нет.')); return; }
     const xs = [...new Set(data.map((r) => r.x))], ss = [...new Set(data.map((r) => r.s))], m = new Map(data.map((r) => [r.x + '|' + r.s, r.v]));
     const val = (x, s) => m.get(x + '|' + s) ?? 0;
-    if (asTable) return table(e, m, xs, ss, k, o);
+    if (asTable || type === 'table') return table(e, m, xs, ss, k, o);
     if (ss.length > 1) { const lg = el('div', 'pl-leg'); ss.forEach((s, i) => { const it = el('span'), sw = el('i'); sw.style.background = color(i); it.append(sw, s); lg.append(it); }); e.append(lg); }
     const W = Math.max(260, e.clientWidth || 600), tip = el('div', 'pl-tip'); tip.hidden = true;
     const showTip = (ev, title, lines) => {
@@ -177,7 +191,7 @@
     const S = rowsOf('series'), M = rowsOf('metrics'); if (!S || !M) return dash0(e);
     const sec = e.closest('[data-doc]'); chart(e, id, S, curCut(M), !sec || view[sec.dataset.doc] !== 'chart');
   }));
-  DOCS.forEach((doc) => {
+  DOCS.concat(['fin']).forEach((doc) => {
     dash.draw('kpi-' + doc, (e) => tiles(e, doc));
     dash.draw('file-' + doc, (e) => {
       const M = rowsOf('metrics'); if (!M) return dash0(e);
@@ -232,7 +246,7 @@
     sel.onchange = () => dash.setParams({cut: sel.value});
   });
   const last = () => { const s = rowsOf('status'); return s ? s.find((r) => r.id === 'last') : null; };
-  const DOCRU = {all: 'все документы', mrr: 'MRR', churn: 'отток', clients: 'клиенты', multi: 'мультиподписки', top20: 'концентрация', cost: 'себестоимость', metrics: 'юнит-экономика', calls: 'обзвоны', org: 'штат', cash: 'поступления', exp: 'расходы'};
+  const DOCRU = {all: 'все документы', mrr: 'MRR', churn: 'отток', clients: 'клиенты', multi: 'мультиподписки', top20: 'концентрация', cost: 'себестоимость', metrics: 'юнит-экономика', calls: 'обзвоны', org: 'штат', cash: 'поступления', exp: 'расходы', fin: 'финансы'};
   dash.draw('status', (e) => {
     const r = last(), M = rowsOf('metrics'), ms = rowsOf('measured') || [], cut = M && M.length ? curCut(M) : null;
     const t = (x) => x ? new Date(x).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
@@ -245,12 +259,17 @@
   dash.draw('msg', (e) => { e.textContent = msgText; });
   const say = (t) => { msgText = t; dash.draw('msg'); };
 
+  const lastDoc = {reports: 'mrr', fin: 'fin_pl'};
   function show(doc, link) {
+    const mode = doc.startsWith('fin_') ? 'fin' : 'reports'; lastDoc[mode] = doc; document.body.dataset.mode = mode;
+    document.querySelectorAll('.pl-mode').forEach((b) => b.setAttribute('aria-current', b.dataset.mode === mode ? 'true' : 'false'));
+    const ct = document.getElementById('cuts-title'); if (ct) ct.textContent = mode === 'fin' ? 'Финансы на срез' : 'Отчёты по срезам';
     document.querySelectorAll('.pl-doc').forEach((s) => { s.hidden = s.dataset.doc !== doc; });
     document.querySelectorAll('.pl-tab').forEach((b) => { b.setAttribute('aria-current', b.dataset.tab === doc ? 'true' : 'false'); });
     if (link) dash.setLink(doc);
   }
   document.querySelectorAll('.pl-tab').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab, true)));
+  document.querySelectorAll('.pl-mode').forEach((b) => b.addEventListener('click', () => show(lastDoc[b.dataset.mode], true)));
   document.querySelectorAll('.pl-segb').forEach((b) => b.addEventListener('click', () => {
     const sec = b.closest('[data-doc]'); if (!sec) return; view[sec.dataset.doc] = b.dataset.view;
     sec.querySelectorAll('.pl-segb').forEach((x) => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
