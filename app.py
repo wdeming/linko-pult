@@ -61,14 +61,14 @@ def guard():
 LOGIN = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Пульт Linko — вход</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&display=swap">
 <style>:root{--a:#3b5bdb;--b:#0ca678}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;font:15px Inter,"Segoe UI",system-ui,sans-serif;color:#141b2d;
-background:radial-gradient(900px 500px at 15% 0%,#dbe4ff,transparent 60%),radial-gradient(800px 500px at 100% 100%,#c3fae8,transparent 60%),#f3f5fa}
-form{background:#fff;border:1px solid #e2e7f0;border-radius:18px;padding:30px;width:min(100%,360px);display:grid;gap:12px;box-shadow:0 2px 4px rgba(20,27,45,.05),0 20px 50px rgba(20,27,45,.12)}
+background:radial-gradient(900px 500px at 15%% 0%%,#dbe4ff,transparent 60%%),radial-gradient(800px 500px at 100%% 100%%,#c3fae8,transparent 60%%),#f3f5fa}
+form{background:#fff;border:1px solid #e2e7f0;border-radius:18px;padding:30px;width:min(100%%,360px);display:grid;gap:12px;box-shadow:0 2px 4px rgba(20,27,45,.05),0 20px 50px rgba(20,27,45,.12)}
 .m{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:#fff;font:800 24px Manrope,sans-serif;background:linear-gradient(135deg,var(--a),var(--b));box-shadow:0 8px 20px rgba(59,91,219,.35)}
 h1{font:800 24px Manrope,sans-serif;margin:6px 0 0;letter-spacing:-.01em}.s{margin:0 0 8px;color:#5f6b80;font-size:13px}
 input{font:inherit;padding:11px 12px;border-radius:11px;border:1px solid #d5dce8;background:#f8faff;color:inherit;outline:none}input:focus{border-color:var(--a);box-shadow:0 0 0 3px rgba(59,91,219,.15)}
 button{font:600 15px Inter,sans-serif;padding:11px;border:0;border-radius:11px;background:linear-gradient(135deg,var(--a),#4c6ef5);color:#fff;cursor:pointer;box-shadow:0 6px 16px rgba(59,91,219,.3)}
 p.e{margin:0;color:#d6336c;font-size:13px}
-@media (prefers-color-scheme:dark){body{color:#e7ecf6;background:radial-gradient(900px 500px at 15% 0%,#1c2a55,transparent 60%),radial-gradient(800px 500px at 100% 100%,#0f3a33,transparent 60%),#0b1220}
+@media (prefers-color-scheme:dark){body{color:#e7ecf6;background:radial-gradient(900px 500px at 15%% 0%%,#1c2a55,transparent 60%%),radial-gradient(800px 500px at 100%% 100%%,#0f3a33,transparent 60%%),#0b1220}
 form{background:#131c2e;border-color:#24314b}input{background:#0f1726;border-color:#24314b}.s{color:#93a1ba}}</style></head>
 <body><form method="post"><div class="m">L</div><h1>Пульт Linko</h1><p class="s">Данные Odoo, срезы и финансы</p><input name="login" placeholder="Логин" autocomplete="username" required><input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required><button>Войти</button>%s</form></body></html>"""
 @app.route('/login', methods=['GET', 'POST'])
