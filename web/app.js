@@ -1,5 +1,6 @@
 (() => {
-  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_hist', 'fin_cash', 'fin_bal', 'fin_rev', 'fin_seg', 'fin_ret', 'fin_src'];
+  const NODASH = ['fin_plan'];   // вкладки со своими данными (не по срезам)
+  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_hist', 'fin_cash', 'fin_bal', 'fin_rev', 'fin_seg', 'fin_ret', 'fin_src', 'fin_plan'];
   // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
   const CH = {
     mrr_end: ['stack', 'm', {row: 'Итого MRR'}], mrr_jerr: ['hbar', 'm', {col: true}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
@@ -195,7 +196,7 @@
     const S = rowsOf('series'), M = rowsOf('metrics'); if (!S || !M) return dash0(e);
     const sec = e.closest('[data-doc]'); chart(e, id, S, curCut(M), !sec || view[sec.dataset.doc] !== 'chart');
   }));
-  DOCS.concat(['fin']).forEach((doc) => {
+  DOCS.filter((d) => !NODASH.includes(d)).concat(['fin']).forEach((doc) => {
     dash.draw('kpi-' + doc, (e) => tiles(e, doc));
     dash.draw('file-' + doc, (e) => {
       const M = rowsOf('metrics'); if (!M) return dash0(e);
@@ -271,7 +272,51 @@
     document.querySelectorAll('.pl-doc').forEach((s) => { s.hidden = s.dataset.doc !== doc; });
     document.querySelectorAll('.pl-tab').forEach((b) => { b.setAttribute('aria-current', b.dataset.tab === doc ? 'true' : 'false'); });
     if (link) dash.setLink(doc);
+    if (doc === 'fin_plan' && !PLAN) loadPlan(false);
   }
+  // ---------- план поступлений (на сегодня, /api/plan) ----------
+  let PLAN = null, planBusy = false;
+  const dmy = (s) => s ? s.slice(8, 10) + '.' + s.slice(5, 7) + '.' + s.slice(0, 4) : '—';
+  async function loadPlan(force) {
+    if (planBusy) return; planBusy = true;
+    const sub = document.getElementById('plan-sub'), btn = document.getElementById('plan-refresh');
+    if (sub) sub.textContent = force ? 'Пересчитываю план из Odoo, это до минуты…' : 'Загружаю план…'; if (btn) btn.disabled = true;
+    try {
+      const r = await fetch('/api/plan' + (force ? '?force=1' : '')); if (r.status === 401) { location.href = '/login'; return; }
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Не удалось получить план'); PLAN = j; drawPlan();
+    } catch (err) { if (sub) sub.textContent = err.message; }
+    finally { planBusy = false; if (btn) btn.disabled = false; }
+  }
+  function ptab(id, rows, k, o) {
+    const e = document.getElementById('plan-viz-' + id); if (!e) return; e.replaceChildren();
+    if (!rows.length) { e.append(el('p', 'pl-file', 'Нет данных.')); return; }
+    table(e, new Map(rows.map((r) => [r[0] + '|' + r[1], r[2]])), [...new Set(rows.map((r) => r[0]))], [...new Set(rows.map((r) => r[1]))], k, o);
+  }
+  function drawPlan() {
+    const P = PLAN; if (!P) return;
+    const fc = P.cols.slice(1), TOT = 'Итого за горизонт', T = P.tab, all = T['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ'], sch = T['ПОДПИСКИ ПО ГРАФИКУ'], adj = T['ПОДПИСКИ С УЧЁТОМ ОТТОКА'];
+    const at = P.computed_at ? new Date(P.computed_at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
+    document.getElementById('plan-sub').textContent = 'Посчитано на ' + dmy(P.today) + ' (обновлено ' + at + '). Горизонт: ' + fc[0] + ' и ' + fc[1] + ' – ' + fc[fc.length - 1] + '.' + (P.error ? ' ' + P.error : '');
+    const fcs = Object.keys(T).filter((x) => x.endsWith('(прогноз)')).reduce((a, x) => a + T[x][TOT], 0);
+    document.getElementById('plan-tiles').replaceChildren(
+      ttile('План поступлений за горизонт', all[TOT], 'm', null, 'm', 'в среднем ' + fmt(all[TOT] / (fc.length - 1 + 0.25), 'm') + ' в месяц; факт за 6 мес. — ' + fmt(P.avg_in, 'm') + ' в месяц'),
+      ttile('Текущие подписки по графику', sch[TOT], 'm', null, 'm', 'с учётом оттока — ' + fmt(adj[TOT], 'm')),
+      ttile('Новые продажи и разовые (прогноз)', fcs, 'm', null, 'm', 'по среднему за ' + P.p6.length + ' мес.'),
+      ttile('Просрочено на сегодня', sch[P.cols[0]], 'm', null, 'm', 'неоплаченные периоды подписок, в план не входит'));
+    const rows = []; Object.entries(T).forEach(([x, v]) => P.cols.concat([TOT]).forEach((c) => { if (v[c] != null) rows.push([x, c, v[c]]); }));
+    ptab('tab', rows, 'm', {bold: /^[А-ЯЁ ]+$/});
+    const LEN = ['Помесячно', '2–3 месяца', '4–6 месяцев', '7–12 месяцев'], lr = [];
+    LEN.forEach((l) => fc.forEach((c) => { const v = P.bylen[l + '|' + c]; lr.push([l, c, v || 0]); }));
+    ptab('len', lr, 'm', {row: 'Итого', col: true});
+    const AG = ['до 30 дней', '31–90 дней', '91–180 дней', 'больше 180 дней'], ar = [];
+    AG.forEach((b) => P.age.filter((a) => a[1] === b).forEach((a) => ar.push([b, a[0], a[3]])));
+    ptab('age', ar, 'm', {row: 'Всего', col: true});
+    const br = []; P.big.forEach((b) => { const x = (b.client || '—') + ' · ' + b.name;
+      [['Продукт', b.prod], ['Статус', b.st], ['План оплаты', b.plan], ['Сумма за период', b.amt], ['Оплачено по', dmy(b.pt)], ['Следующая оплата', dmy(b.next)]].forEach(([c, v]) => br.push([x, c, v])); });
+    ptab('big', br, 'm', {cf: {'Сумма за период': 'm'}});
+  }
+  document.getElementById('plan-refresh')?.addEventListener('click', () => loadPlan(true));
+  document.getElementById('plan-dl')?.addEventListener('click', () => { window.location.href = '/api/plan/file'; });
   document.querySelectorAll('.pl-tab').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab, true)));
   document.querySelectorAll('.pl-mode').forEach((b) => b.addEventListener('click', () => show(lastDoc[b.dataset.mode], true)));
   document.querySelectorAll('.pl-segb').forEach((b) => b.addEventListener('click', () => {

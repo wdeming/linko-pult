@@ -159,6 +159,37 @@ def api_today():
     d['fetched_at'] = datetime.datetime.fromtimestamp(TODAY['at'], datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if TODAY['at'] else None
     d['error'] = TODAY['err']
     return jsonify(d)
+PLAN = {'busy': False}
+PLOCK = threading.Lock()
+def plan_dir():
+    d = os.path.join(DATA, 'plan'); os.makedirs(d, exist_ok=True); return d
+@app.route('/api/plan')
+def api_plan():
+    """План поступлений на 6 месяцев — считается на сегодня (pult/plan.py), хранится в data/plan/. Пересчёт: раз в 6 часов или по кнопке (не для просмотра)."""
+    import time
+    fp = os.path.join(plan_dir(), 'plan.json'); force = request.args.get('force') == '1' and role() != 'viewer'
+    old = os.path.exists(fp) and (time.time() - os.path.getmtime(fp) > 6 * 3600 or json.load(open(fp, encoding='utf-8')).get('today') != datetime.date.today().isoformat())
+    err = None
+    if force or not os.path.exists(fp) or old:
+        with PLOCK:
+            fresh = os.path.exists(fp) and time.time() - os.path.getmtime(fp) < 60      # пока ждали — посчитал соседний запрос
+            try:
+                if fresh: raise StopIteration
+                r = subprocess.run([sys.executable, os.path.join('pult', 'plan.py'), plan_dir()], cwd=CALC, capture_output=True, text=True, timeout=170, env=dict(os.environ, PYTHONIOENCODING='utf-8'))
+                if r.returncode != 0: raise RuntimeError((r.stderr or r.stdout)[-300:])
+            except StopIteration: pass
+            except Exception as e:
+                err = 'Не удалось пересчитать план из Odoo: ' + re.sub(r'password=\S+', 'password=***', str(e))[-200:]
+    if not os.path.exists(fp): return jsonify(error=err or 'План ещё не посчитан'), 500
+    d = json.load(open(fp, encoding='utf-8')); d['computed_at'] = datetime.datetime.fromtimestamp(os.path.getmtime(fp), datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'); d['error'] = err
+    return jsonify(d)
+@app.route('/api/plan/file')
+def api_plan_file():
+    fp = os.path.join(plan_dir(), 'plan.json')
+    if not os.path.exists(fp): return 'План ещё не посчитан', 404
+    fn = json.load(open(fp, encoding='utf-8'))['file']; path = os.path.join(plan_dir(), fn)
+    if not os.path.exists(path): return 'Файл не найден', 404
+    return Response(open(path, 'rb').read(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': "attachment; filename=\"linko_plan.xlsx\"; filename*=UTF-8''%s" % quote(fn)})
 @app.route('/api/history')
 def api_history():
     with db() as c: rows = c.execute('select id, started, finished, state, cut, docs, msg, who from run order by id desc limit 50').fetchall()
