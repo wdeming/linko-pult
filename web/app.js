@@ -315,9 +315,10 @@
       const fr = []; P.flow.forEach(([x, v]) => fc.concat([TOT]).forEach((c) => { if (v[c] != null) fr.push([x, c, v[c]]); }));
       ptab('flow', fr, 'm', {bold: /^[А-ЯЁ ]+$|^Остаток/}, fc.concat([TOT]));
       const ir = []; P.eitems.slice().sort((a, b) => b.amt - a.amt).forEach((x) => { const k = x.name;
-        [['Статья', x.cat], ['Сумма, сум', x.amt], ['Повторяется', x.rep ? 'ежемесячно' : 'разово'], ['Дата в реестре', dmy(x.plan_date)], ['Последняя оплата', dmy(x.last_pay)], ['Оплачено по', dmy(x.paid_to)], ['Следующий платёж', dmy(x.next)], ['Просрочено', x.over || null]].forEach(([c, v]) => ir.push([k, c, v])); });
-      ptab('eitems', ir, 'm', {cf: {'Сумма, сум': 'm', 'Просрочено': 'm'}});
-      ptab('unpl', P.unplanned.map(([c, n, v]) => [n + ' · ' + c, 'В среднем в месяц', v]), 'm', {col: true});
+        [['Статья', x.cat], ['Сумма, сум', x.amt], ['Оплачено частично, остаток', x.partial || null], ['Повторяется', x.rep ? 'ежемесячно' : 'разово'], ['Дата в реестре', dmy(x.plan_date)], ['Последняя оплата', dmy(x.last_pay)], ['Оплачено по', dmy(x.paid_to)], ['Следующий платёж', dmy(x.next)], ['Просрочено', x.over || null]].forEach(([c, v]) => ir.push([k, c, v])); });
+      ptab('eitems', ir, 'm', {cf: {'Сумма, сум': 'm', 'Просрочено': 'm', 'Оплачено частично, остаток': 'm'}});
+      const ur = []; P.unplanned.forEach(([c, n, v, f]) => { const x = n + ' · ' + c; ur.push([x, 'В среднем в месяц за 3 мес.', v], [x, 'В плане', f || '']); });
+      ptab('unpl', ur, 'm', {});
     }
     const cs = fc.concat([TOT, P.cols[0]]), rows = []; P.tab.forEach(([x, v]) => cs.forEach((c) => { if (v[c] != null) rows.push([x, c, v[c]]); }));
     ptab('tab', rows, 'm', {bold: /^[А-ЯЁ ]+$/}, cs);

@@ -15,7 +15,7 @@ FOT_CATS = {'Оклад', 'KPI', 'Материальная помощь'}
 CAPEX = {'Техника и мебель'}
 # сопоставление плановых платежей с фактом: (статьи, регулярное выражение по описанию, сумма ±%)
 RULES = [
-    (r'аренда офиса', {'Аренда'}, None), (r'корпоративные номера', None, r'uztelecom|корпоратив|номер'), (r'admixer', None, r'admixer'),
+    (r'аренда офиса', {'Аренда'}, r'^(?!.*виртуал)'), (r'корпоративные номера', None, r'uztelecom|корпоратив|номер'), (r'admixer', None, r'admixer'),
     (r'playmobile', None, r'play ?mobile|плеймоб'), (r'servorcore|servercore', None, r'servercore|servorcore|серверкор'),
     (r'бухгалтерское обслуживание', {'Аутсорс'}, r'бухгалтер(?!.*ritm)'), (r'бухгалтерия аутсорс ritm', {'Аутсорс'}, r'бухгалтер'),
     (r'amo crm', None, r'\bamo'), (r'сервер\w* rit|ritm|ритм', {'Хостинг и инфраструктура'}, r'ритм|ritm'), (r'sarkor', None, r'sarkor|саркор'), (r'атто', {'Дорожные расходы (ATTO карты)', 'Дорожные расходы (АТТО карты)'}, None),
@@ -66,27 +66,33 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         due = it['d'] or TODAY.replace(day=1)
         paid_to = max((a['d2'] for a in mine if a['d2'] > a['d1']), default=None)        # оплачено вперёд по периоду
         free = sorted(mine, key=lambda a: a['pay'])
-        def covered(dd):         # период оплаты покрывает дату или оплата была в пределах 25 дней от неё (каждая оплата закрывает один платёж)
-            mid = dd + datetime.timedelta(days=15)      # платёж в дату D оплачивает период D…D+1 мес.: закрыт, если оплаченный период покрывает его середину
-            if any(a['d1'] <= mid <= a['d2'] and a['d2'] > a['d1'] for a in mine): return True
-            for a in free:
-                if abs((a['pay'] - dd).days) <= 25: free.remove(a); return True
-            return False
-        if it['rep']:
-            for _ in range(24):
-                if due <= H_END and covered(due): due = addm(due, 1)
-                else: break
-        elif covered(due): due = None
-        row = {'cat': cat, 'name': nm, 'amt': amt, 'cur': it['cur'] or 'UZS', 'src_amt': float(it['s']), 'rep': bool(it['rep']), 'plan_date': str(it['d'] or ''), 'next': None, 'over': 0.0, 'n_fact': len(mine),
-               'last_pay': str(max((a['pay'] for a in mine), default='') or ''), 'paid_to': str(paid_to or ''), 'm': {}}
-        d = due
-        while d and d <= H_END:
-            if d < TODAY:
-                if d >= addm(TODAY, -3): OVR[cat] += amt; row['over'] += amt; SCH[(cat, C_CUR)] += amt; SRC[cat].add('план, есть просрочка'); row['m'][C_CUR] = row['m'].get(C_CUR, 0) + amt
-            else:
-                c = col(d); SCH[(cat, c)] += amt; SRC[cat].add('план'); row['m'][c] = row['m'].get(c, 0) + amt; row['next'] = row['next'] or str(d)
+        def paid_for(dd):        # сколько оплачено по платежу в дату dd: период оплаты покрывает его середину — полностью; иначе сумма оплат в пределах 25 дней (каждая оплата — один раз)
+            mid = dd + datetime.timedelta(days=15)
+            if any(a['d1'] <= mid <= a['d2'] and a['d2'] > a['d1'] for a in mine): return amt
+            got = 0.0
+            for a in list(free):
+                if abs((a['pay'] - dd).days) <= 25:
+                    free.remove(a); got += a['amt']
+                    if got >= amt * 0.9: break
+            return got
+        PAYS = []                # (дата, сумма) к оплате
+        due = due if due else TODAY
+        for _ in range(36):
+            if due > H_END: break
+            got = paid_for(due)
+            if got < amt * 0.9:
+                PAYS.append((due, amt - got, got > 0))      # не оплачено или оплачено частично — остаток
             if not it['rep']: break
-            d = addm(d, 1)
+            due = addm(due, 1)
+        row = {'cat': cat, 'name': nm, 'amt': amt, 'cur': it['cur'] or 'UZS', 'src_amt': float(it['s']), 'rep': bool(it['rep']), 'plan_date': str(it['d'] or ''), 'next': None, 'over': 0.0, 'n_fact': len(mine),
+               'last_pay': str(max((a['pay'] for a in mine), default='') or ''), 'paid_to': str(paid_to or ''), 'partial': 0.0, 'm': {}}
+        for d, a_, part in PAYS:
+            if part: row['partial'] += a_; SRC[cat].add('план, оплачено частично')
+            if d < TODAY:
+                if d < addm(TODAY, -3): continue
+                OVR[cat] += a_; row['over'] += a_; SCH[(cat, C_CUR)] += a_; SRC[cat].add('план, есть просрочка'); row['m'][C_CUR] = row['m'].get(C_CUR, 0) + a_
+            else:
+                c = col(d); SCH[(cat, c)] += a_; SRC[cat].add('план'); row['m'][c] = row['m'].get(c, 0) + a_; row['next'] = row['next'] or str(d)
         DET.append(row)
     # ---- ФОТ по ведомостям
     W = q("""select w.id, w.x_name nm, w.x_studio_date d from x_wages w where w.x_studio_date is not null and w.x_studio_date <= date %s order by w.x_studio_date desc limit 4""", (TODAY,))
@@ -121,15 +127,18 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
     # ---- вне плана: факт по дате оплаты за 3 полных месяца, чего нет в плановом реестре и не ФОТ
     P3 = [addm(m0, -i).strftime('%Y-%m') for i in (3, 2, 1)]
     import fin_groups as FG
-    UNP = collections.defaultdict(float); UNN = collections.defaultdict(float)
+    UNP = collections.defaultdict(float); UNN = collections.defaultdict(float); UNM = collections.defaultdict(set); ONE = collections.defaultdict(float)
+    MONW = r'\b(январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр|за)\w*'
+    nkey = lambda a: re.sub(MONW, ' ', re.sub(r'[^a-zа-яё ]', ' ', re.sub(r'\d[\d .,]*', ' ', a['note']))).split()[:2]
     for a in ACT:
         if a['used'] or a['cat'] in FOT_CATS or a['cat'] == 'Налоги ЗП' or a['pay'].strftime('%Y-%m') not in P3: continue
-        UNP[a['cat'] or 'Без статьи'] += a['amt'] / 3
-        key = re.sub(r'\d[\d .,]*', '', a['note'])[:40].strip() or a['cat'].lower()
-        UNN[(a['cat'], key)] += a['amt'] / 3
+        k2 = (a['cat'], ' '.join(nkey(a)) or a['cat'].lower()); UNN[k2] += a['amt'] / 3; UNM[k2].add(a['pay'].strftime('%Y-%m'))
+    for (c0, k0), v in UNN.items():       # регулярное — платили минимум в 2 из 3 месяцев; техника и мебель и разовые траты в план не идут
+        if len(UNM[(c0, k0)]) >= 2 and c0 not in CAPEX: UNP[c0 or 'Без статьи'] += v
+        else: ONE[(c0, k0)] += v * 3
     share = lambda c: ((CUR_END - TODAY).days + 1) / calendar.monthrange(TODAY.year, TODAY.month)[1] if c == C_CUR else 1.0
     for cat, v in UNP.items():
-        SRC[cat].add('среднее факта 3 мес.')
+        SRC[cat].add('регулярно по факту, нет в плане')
         for c in cols: SCH[(cat, c)] += v * share(c)
     VC = collections.defaultdict(collections.Counter)
     for a in ACT: VC[a['cat']][a['vid']] += 1
@@ -149,6 +158,6 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         for c0, v in sorted(rows_, key=lambda z: -z[1]['Итого за горизонт']): TAB[c0] = v
     SUBT = {vd.upper() for vd in VIDS}
     TAB['ВСЕГО ПЛАН РАСХОДОВ'] = {c: sum(v[c] for k, v in TAB.items() if k in SUBT) for c in allc}
-    top = sorted(([c, n, v] for (c, n), v in UNN.items() if v >= 300e3), key=lambda z: -z[2])[:25]
+    top = sorted(([c, n, v, 'регулярно — в плане по среднему' if (len(UNM[(c, n)]) >= 2 and c not in CAPEX) else 'разово — в план не включено'] for (c, n), v in UNN.items() if v >= 300e3), key=lambda z: -z[2])[:30]
     info = {'S': S, 'paid_cur': paid_cur, 'REM': REM, 'A0': A0, 'KPI_M': KPI_M, 'QKPI': QKPI, 'OLD': OLD, 'wages': cur_w['nm'] if isinstance(cur_w['nm'], str) else (cur_w['nm'] or {}).get('ru_RU') or (cur_w['nm'] or {}).get('en_US') or '', 'P3': P3, 'RUB': RUB}
     return TAB, DET, top, info
