@@ -82,9 +82,9 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         d = due
         while d and d <= H_END:
             if d < TODAY:
-                if d >= addm(TODAY, -3): OVR[cat] += amt; row['over'] += amt; SCH[(cat, C_CUR)] += amt; SRC[cat].add('план (просрочено — в текущем месяце)'); row['m'][C_CUR] = row['m'].get(C_CUR, 0) + amt
+                if d >= addm(TODAY, -3): OVR[cat] += amt; row['over'] += amt; SCH[(cat, C_CUR)] += amt; SRC[cat].add('план, есть просрочка'); row['m'][C_CUR] = row['m'].get(C_CUR, 0) + amt
             else:
-                c = col(d); SCH[(cat, c)] += amt; SRC[cat].add('плановый реестр'); row['m'][c] = row['m'].get(c, 0) + amt; row['next'] = row['next'] or str(d)
+                c = col(d); SCH[(cat, c)] += amt; SRC[cat].add('план'); row['m'][c] = row['m'].get(c, 0) + amt; row['next'] = row['next'] or str(d)
             if not it['rep']: break
             d = addm(d, 1)
         DET.append(row)
@@ -117,7 +117,7 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         SCH[('KPI', c)] += KPI_M
         mm = int(HM[i - 1][5:7])
         if mm in (1, 4, 7, 10): SCH[('KPI', c)] += QKPI
-    SRC['Оклад'].add('ведомость ЗП'); SRC['KPI'].add('ведомость ЗП + квартальный KPI'); OVR['Оклад'] += OLD
+    SRC['Оклад'].add('ведомость ЗП'); SRC['KPI'].add('ведомость + квартальный'); OVR['Оклад'] += OLD
     # ---- вне плана: факт по дате оплаты за 3 полных месяца, чего нет в плановом реестре и не ФОТ
     P3 = [addm(m0, -i).strftime('%Y-%m') for i in (3, 2, 1)]
     import fin_groups as FG
@@ -129,7 +129,7 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         UNN[(a['cat'], key)] += a['amt'] / 3
     share = lambda c: ((CUR_END - TODAY).days + 1) / calendar.monthrange(TODAY.year, TODAY.month)[1] if c == C_CUR else 1.0
     for cat, v in UNP.items():
-        SRC[cat].add('среднее факта за 3 мес. (нет в плановом реестре)')
+        SRC[cat].add('среднее факта 3 мес.')
         for c in cols: SCH[(cat, c)] += v * share(c)
     VC = collections.defaultdict(collections.Counter)
     for a in ACT: VC[a['cat']][a['vid']] += 1
@@ -144,7 +144,7 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         rows_ = []
         for c0 in cs:
             v = {c: SCH[(c0, c)] for c in cols}; v['Итого за горизонт'] = sum(v[c] for c in cols); v['Долги прошлых периодов'] = OVR.get(c0, 0.0)
-            v['Как считается'] = '; '.join(sorted(SRC[c0])); rows_.append((c0, v))
+            v['Как считается'] = ' + '.join(sorted(SRC[c0])); rows_.append((c0, v))
         TAB[vd.upper()] = {c: sum(v[c] for _, v in rows_) for c in allc}
         for c0, v in sorted(rows_, key=lambda z: -z[1]['Итого за горизонт']): TAB[c0] = v
     SUBT = {vd.upper() for vd in VIDS}
