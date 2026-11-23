@@ -153,6 +153,20 @@ res = {'today': TODAY.isoformat(), 'cols': COLS, 'months': HM, 'tab': list(TAB.i
        'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'rates': [[b, OBS[b][0], OBS[b][1], RATE[b], BSTAT[b]['subs'], len(BSTAT[b]['clients']), BSTAT[b]['sch'], BSTAT[b]['loss']] for b in BUCKETS], 'nrate': NRATE, 'manual_new': {str(k): v for k, v in MANUAL_NEW.items()}, 'avg_new': AVG_NEW, 'new_mrr': dict(NEWM), 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
        'n_subs': {LINE(p, st): sum(1 for r in DET if r['prod'] == p and r['st'] == ST[st]) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')},
        'big': [{'name': r['name'], 'client': r['client'], 'prod': r['prod'], 'st': r['st'], 'plan': r['plan'], 'amt': r['amt'], 'next': r.get('next'), 'pt': r['pt']} for r in BIG]}
+# ---------------- плановые расходы и денежный поток ----------------
+import plan_exp
+ETAB, EDET, UNPL, EINFO = plan_exp.build(q, TODAY, CUR_END, HM, ml, C_CUR, FC)
+CASH0 = 0.0
+for r in q(f"""select a.currency_id cur, sum(l.balance) bal, sum(l.amount_currency) amc from account_account a join account_move_line l on l.account_id=a.id and l.parent_state='posted'
+     where a.id in (select default_account_id from account_journal where type in ('bank','cash')) and a.code not in ('101506','101507') and l.date <= date '{TODAY}' group by 1"""):
+    CASH0 += float(r['amc'] or 0) * K if r['cur'] == 1 else float(r['bal'] or 0)
+FLOW = collections.OrderedDict(); IN_T = TAB['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ']; EX_T = ETAB['ВСЕГО ПЛАН РАСХОДОВ']
+FLOW['Поступления по плану'] = {c: IN_T[c] for c in FC}; FLOW['Расходы по плану'] = {c: -EX_T[c] for c in FC}
+FLOW['ЧИСТЫЙ ПОТОК'] = {c: IN_T[c] - EX_T[c] for c in FC}
+bal = CASH0; FLOW['Остаток денег на конец месяца'] = {}
+for c in FC: bal += FLOW['ЧИСТЫЙ ПОТОК'][c]; FLOW['Остаток денег на конец месяца'][c] = bal
+for k in ('Поступления по плану', 'Расходы по плану', 'ЧИСТЫЙ ПОТОК'): FLOW[k]['Итого за горизонт'] = sum(FLOW[k][c] for c in FC)
+res.update({'etab': list(ETAB.items()), 'ecols': FC + ['Итого за горизонт', 'Долги прошлых периодов'], 'eitems': EDET, 'unplanned': UNPL, 'einfo': EINFO, 'flow': list(FLOW.items()), 'cash0': CASH0})
 # ---------------- Excel ----------------
 import openpyxl
 from openpyxl.utils import get_column_letter as LL
@@ -172,6 +186,35 @@ notes(ws, r + 1, [
   'Разовые — среднее по счетам за 6 мес.: обучение %.1f млн, доработки %.1f млн, Perfect Store / производство / прочее %.1f млн в месяц. Текущий месяц — пропорционально оставшимся дням.' % tuple(AVG_ONE[g] / 1e6 for g in ONE_G),
   'Не учтено: расширения у текущих клиентов, повышение цен с 2027 года, оплаты долгов прошлых периодов.'])
 widths(ws, {'A': 50, **{LL(c): 15 for c in range(2, len(COLS) + 3)}}); ws.freeze_panes = 'B4'
+ws = wb.create_sheet('План расходов')
+title(ws, 'A1', 'План расходов на %s – %s (на %s), сум' % (ml(HM[0]), ml(HM[-1]), TODAY.strftime('%d.%m.%Y')))
+EC = FC + ['Итого за горизонт', 'Долги прошлых периодов']; header(ws, 3, ['Статья'] + EC); r = 4
+for k, v in ETAB.items():
+    vals = [k] + [None if v.get(c) is None else round(v[c]) for c in EC]
+    (totalrow(ws, r, vals, fmts=[None] + [NUM] * len(EC)) if k.isupper() else datarow(ws, r, vals, fmts=[None] + [NUM] * len(EC), blue_inputs=False)); r += 1
+r += 1; header(ws, r, ['Денежный поток'] + FC + ['Итого за горизонт']); r += 1
+for k, v in FLOW.items():
+    vals = [k] + [round(v[c]) if v.get(c) is not None else None for c in FC + ['Итого за горизонт']]
+    (totalrow(ws, r, vals, fmts=[None] + [NUM] * (len(FC) + 1)) if k.isupper() else datarow(ws, r, vals, fmts=[None] + [NUM] * (len(FC) + 1), blue_inputs=False)); r += 1
+E = EINFO
+notes(ws, r + 1, [
+  'Плановые платежи — реестр «Плановые расходы» Odoo: дата следующей оплаты, сумма (доллары × 12 000, рубли × %.0f), повторяющиеся — ежемесячно, остальные — разово.' % E['RUB'],
+  'Сверка с фактом (реестр «Расходы»): если по статье уже есть оплата за этот период (период расхода покрывает дату платежа или оплата была в пределах 25 дней от неё) — платёж закрыт и переносится на следующий месяц; так учитывается и оплата вперёд. Платёж с прошедшей датой без оплаты — просрочен и стоит в текущем месяце.',
+  'ФОТ — ведомость «%s»: оклады %.1f млн в месяц. В текущем месяце уже выплачено %.1f млн, остаток %.1f млн — в следующем месяце. Дальше %.0f%% оклада платится в своём месяце (аванс, по факту 3 месяцев), остальное — в следующем. KPI в ведомостях — %.1f млн в месяц (среднее), квартальный KPI — %.1f млн (последний факт) в месяце после конца квартала.' % (E['wages'], E['S'] / 1e6, E['paid_cur'] / 1e6, E['REM'] / 1e6, E['A0'] * 100, E['KPI_M'] / 1e6, E['QKPI'] / 1e6),
+  'Долги по ЗП прошлых периодов (остаток «Баланс» в ведомости, %.1f млн) — отдельной колонкой, в план месяцев не входят. Налоги с ФОТ — в плановом реестре.' % (E['OLD'] / 1e6),
+  'Вне плана — то, что регулярно платим, но в плановом реестре нет (сервера, Proxima, обеды, маркетинг, техника и пр.): среднее факта по дате оплаты за %s – %s. Лучше завести их в плановый реестр — тогда они будут считаться по датам.' % (ml(E['P3'][0]), ml(E['P3'][-1])),
+  'Остаток денег — с остатка на %s по Odoo (%.1f млн, без «Кассы Азиз» и FOTON), плюс плановые поступления минус плановые расходы; займы и возврат долгов не учтены.' % (TODAY.strftime('%d.%m.%Y'), CASH0 / 1e6)])
+widths(ws, {'A': 52, **{LL(c): 15 for c in range(2, len(EC) + 3)}}); ws.freeze_panes = 'B4'
+ws = wb.create_sheet('Плановые платежи')
+header(ws, 1, ['Платёж', 'Сумма', 'Валюта', 'Сумма, сум', 'Повторяется', 'Дата в реестре', 'Оплат найдено в факте', 'Последняя оплата', 'Оплачено по периоду', 'Следующий платёж', 'Просрочено'] + FC); r = 2
+for x in sorted(EDET, key=lambda x: -x['amt']):
+    datarow(ws, r, [x['name'], x['src_amt'], x['cur'], round(x['amt']), 'да' if x['rep'] else 'разово', x['plan_date'], x['n_fact'], x['last_pay'], x['paid_to'], x['next'], round(x['over']) or None] + [round(x['m'][c]) if c in x['m'] else None for c in FC],
+            fmts=[None, NUM, None, NUM] + [None] * 6 + [NUM] * (1 + len(FC)), blue_inputs=False); r += 1
+widths(ws, {'A': 32, 'B': 13, 'C': 7, 'D': 14, 'E': 11, 'F': 12, 'G': 10, 'H': 13, 'I': 13, 'J': 13, 'K': 13, **{LL(c): 13 for c in range(12, 12 + len(FC))}})
+ws = wb.create_sheet('Вне плана')
+header(ws, 1, ['Статья', 'Описание в реестре «Расходы»', 'В среднем в месяц, сум']); r = 2
+for c0, n0, v0 in UNPL: datarow(ws, r, [c0, n0, round(v0)], fmts=[None, None, NUM], blue_inputs=False); r += 1
+widths(ws, {'A': 30, 'B': 44, 'C': 18})
 ws = wb.create_sheet('По подпискам')
 header(ws, 1, ['Подписка', 'Клиент', 'Продукт', 'Статус', 'Размер клиента', 'План оплаты', 'Сумма за период', 'MRR', 'Оплачено по', 'Как определено', 'Следующая оплата', 'Просрочено, сумма', 'Просрочено, периодов'] + FC); r = 2
 for x in sorted(DET, key=lambda x: (x['prod'], x['st'], x['client'] or '')):
@@ -187,6 +230,6 @@ ws = wb.create_sheet('Просрочено')
 header(ws, 1, ['Продукт и статус', 'Срок с первого неоплаченного периода', 'Подписок', 'Сумма, сум']); r = 2
 for k0, k1, n, a in res['age']: datarow(ws, r, [k0, k1, n, round(a)], fmts=[None, None, NUM, NUM], blue_inputs=False); r += 1
 widths(ws, {'A': 22, 'B': 34, 'C': 10, 'D': 16})
-fn = 'План_поступлений_на_%s.xlsx' % TODAY.strftime('%d.%m.%Y'); wb.save(os.path.join(OUT, fn)); res['file'] = fn
+fn = 'План_поступлений_и_расходов_на_%s.xlsx' % TODAY.strftime('%d.%m.%Y'); wb.save(os.path.join(OUT, fn)); res['file'] = fn
 json.dump(res, open(os.path.join(OUT, 'plan.json'), 'w'), ensure_ascii=False, default=str)
 print(json.dumps({'ok': True, 'file': fn}))

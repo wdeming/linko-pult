@@ -303,6 +303,22 @@
       ttile('Текущие подписки по графику', sch[TOT], 'm', null, 'm', 'с учётом оттока — ' + fmt(adj[TOT], 'm')),
       ttile('Новые продажи и разовые (прогноз)', fcs, 'm', null, 'm', 'по среднему за ' + P.p6.length + ' мес.'),
       ttile('Просрочено на сегодня', sch[P.cols[0]], 'm', null, 'm', 'неоплаченные периоды подписок, в план не входит'));
+    if (P.etab) {
+      const E = Object.fromEntries(P.etab), FL = Object.fromEntries(P.flow), et = E['ВСЕГО ПЛАН РАСХОДОВ'], ob = FL['Остаток денег на конец месяца'];
+      const minC = fc.reduce((a, c) => (ob[c] < ob[a] ? c : a), fc[0]);
+      const tl = document.getElementById('plan-tiles');
+      tl.append(ttile('Расходы по плану за горизонт', et[TOT], 'm', null, 'm', 'в среднем ' + fmt(fc.slice(1).reduce((a, c) => a + et[c], 0) / (fc.length - 1), 'm') + ' в месяц'),
+        ttile('Чистый поток за горизонт', FL['ЧИСТЫЙ ПОТОК'][TOT], 'm', null, 'm', 'поступления минус расходы'),
+        ttile('Минимальный остаток денег', ob[minC], 'm', null, 'm', minC + '; на сегодня ' + fmt(P.cash0, 'm') + ', займы не учтены'));
+      const ec = P.ecols, er = []; P.etab.forEach(([x, v]) => ec.forEach((c) => { if (v[c] != null && (v[c] !== 0 || c !== 'Долги прошлых периодов')) er.push([x, c, v[c]]); }));
+      ptab('exp', er, 'm', {bold: /^[А-ЯЁ ]+$/}, ec);
+      const fr = []; P.flow.forEach(([x, v]) => fc.concat([TOT]).forEach((c) => { if (v[c] != null) fr.push([x, c, v[c]]); }));
+      ptab('flow', fr, 'm', {bold: /^[А-ЯЁ ]+$|^Остаток/}, fc.concat([TOT]));
+      const ir = []; P.eitems.slice().sort((a, b) => b.amt - a.amt).forEach((x) => { const k = x.name;
+        [['Сумма, сум', x.amt], ['Повторяется', x.rep ? 'ежемесячно' : 'разово'], ['Дата в реестре', dmy(x.plan_date)], ['Последняя оплата', dmy(x.last_pay)], ['Оплачено по', dmy(x.paid_to)], ['Следующий платёж', dmy(x.next)], ['Просрочено', x.over || null]].forEach(([c, v]) => ir.push([k, c, v])); });
+      ptab('eitems', ir, 'm', {cf: {'Сумма, сум': 'm', 'Просрочено': 'm'}});
+      ptab('unpl', P.unplanned.map(([c, n, v]) => [n + ' · ' + c, 'В среднем в месяц', v]), 'm', {col: true});
+    }
     const cs = fc.concat([TOT, P.cols[0]]), rows = []; P.tab.forEach(([x, v]) => cs.forEach((c) => { if (v[c] != null) rows.push([x, c, v[c]]); }));
     ptab('tab', rows, 'm', {bold: /^[А-ЯЁ ]+$/}, cs);
     const rr = []; P.rates.forEach(([b, n, c, rt, ns, nc, sch, loss]) => { rr.push([b, 'Ушло клиентов за 6 мес.', c + ' из ' + n + ' клиенто-мес.'], [b, 'Отток в месяц', rt], [b, 'Клиентов сейчас', nc], [b, 'Оплаты по графику в горизонте', sch], [b, 'Поправка на отток', -loss]); });
