@@ -287,27 +287,27 @@
     } catch (err) { if (sub) sub.textContent = err.message; }
     finally { planBusy = false; if (btn) btn.disabled = false; }
   }
-  function ptab(id, rows, k, o) {
+  function ptab(id, rows, k, o, ss) {
     const e = document.getElementById('plan-viz-' + id); if (!e) return; e.replaceChildren();
     if (!rows.length) { e.append(el('p', 'pl-file', 'Нет данных.')); return; }
-    table(e, new Map(rows.map((r) => [r[0] + '|' + r[1], r[2]])), [...new Set(rows.map((r) => r[0]))], [...new Set(rows.map((r) => r[1]))], k, o);
+    table(e, new Map(rows.map((r) => [r[0] + '|' + r[1], r[2]])), [...new Set(rows.map((r) => r[0]))], ss || [...new Set(rows.map((r) => r[1]))], k, o);
   }
   function drawPlan() {
     const P = PLAN; if (!P) return;
-    const fc = P.cols.slice(1), TOT = 'Итого за горизонт', T = P.tab, all = T['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ'], sch = T['ПОДПИСКИ ПО ГРАФИКУ'], adj = T['ПОДПИСКИ С УЧЁТОМ ОТТОКА'];
+    const fc = P.cols.slice(1), TOT = 'Итого за горизонт', T = Object.fromEntries(P.tab), all = T['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ'], sch = T['ПОДПИСКИ ПО ГРАФИКУ'], adj = T['ПОДПИСКИ С УЧЁТОМ ОТТОКА'];
     const at = P.computed_at ? new Date(P.computed_at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
     document.getElementById('plan-sub').textContent = 'Посчитано на ' + dmy(P.today) + ' (обновлено ' + at + '). Горизонт: ' + fc[0] + ' и ' + fc[1] + ' – ' + fc[fc.length - 1] + '.' + (P.error ? ' ' + P.error : '');
     const fcs = Object.keys(T).filter((x) => x.endsWith('(прогноз)')).reduce((a, x) => a + T[x][TOT], 0);
     document.getElementById('plan-tiles').replaceChildren(
-      ttile('План поступлений за горизонт', all[TOT], 'm', null, 'm', 'в среднем ' + fmt(all[TOT] / (fc.length - 1 + 0.25), 'm') + ' в месяц; факт за 6 мес. — ' + fmt(P.avg_in, 'm') + ' в месяц'),
+      ttile('План поступлений за горизонт', all[TOT], 'm', null, 'm', 'в среднем ' + fmt(fc.slice(1).reduce((a, c) => a + all[c], 0) / (fc.length - 1), 'm') + ' в месяц; факт за 6 мес. — ' + fmt(P.avg_in, 'm') + ' в месяц'),
       ttile('Текущие подписки по графику', sch[TOT], 'm', null, 'm', 'с учётом оттока — ' + fmt(adj[TOT], 'm')),
       ttile('Новые продажи и разовые (прогноз)', fcs, 'm', null, 'm', 'по среднему за ' + P.p6.length + ' мес.'),
       ttile('Просрочено на сегодня', sch[P.cols[0]], 'm', null, 'm', 'неоплаченные периоды подписок, в план не входит'));
-    const rows = []; Object.entries(T).forEach(([x, v]) => P.cols.concat([TOT]).forEach((c) => { if (v[c] != null) rows.push([x, c, v[c]]); }));
-    ptab('tab', rows, 'm', {bold: /^[А-ЯЁ ]+$/});
+    const cs = fc.concat([TOT, P.cols[0]]), rows = []; P.tab.forEach(([x, v]) => cs.forEach((c) => { if (v[c] != null) rows.push([x, c, v[c]]); }));
+    ptab('tab', rows, 'm', {bold: /^[А-ЯЁ ]+$/}, cs);
     const LEN = ['Помесячно', '2–3 месяца', '4–6 месяцев', '7–12 месяцев'], lr = [];
     LEN.forEach((l) => fc.forEach((c) => { const v = P.bylen[l + '|' + c]; lr.push([l, c, v || 0]); }));
-    ptab('len', lr, 'm', {row: 'Итого', col: true});
+    ptab('len', lr, 'm', {row: 'Итого', col: true}, fc);
     const AG = ['до 30 дней', '31–90 дней', '91–180 дней', 'больше 180 дней'], ar = [];
     AG.forEach((b) => P.age.filter((a) => a[1] === b).forEach((a) => ar.push([b, a[0], a[3]])));
     ptab('age', ar, 'm', {row: 'Всего', col: true});

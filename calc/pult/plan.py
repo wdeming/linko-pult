@@ -121,7 +121,7 @@ TAB['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ'] = {c: TAB['ПОДПИСКИ С
 TAB['Справочно: среднее фактическое поступление за 6 мес.'] = {c: AVG_IN * SH[c] for c in FC}
 for k, v in TAB.items(): v['Итого за горизонт'] = sum(v.get(c, 0) or 0 for c in FC)
 BIG = sorted([r for r in DET if r['m']], key=lambda r: -max(r['m'].values()))[:40]
-res = {'today': TODAY.isoformat(), 'cols': COLS, 'months': HM, 'tab': TAB, 'bylen': {k[0] + '|' + k[1]: v for k, v in BYLEN.items()},
+res = {'today': TODAY.isoformat(), 'cols': COLS, 'months': HM, 'tab': list(TAB.items()),   # список — порядок строк сохраняется в JSON 'bylen': {k[0] + '|' + k[1]: v for k, v in BYLEN.items()},
        'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'churn': CHURN, 'avg_new': AVG_NEW, 'new_mrr': NEWM, 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
        'n_subs': {LINE(p, st): sum(1 for r in DET if r['prod'] == p and r['st'] == ST[st]) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')},
        'big': [{'name': r['name'], 'client': r['client'], 'prod': r['prod'], 'st': r['st'], 'plan': r['plan'], 'amt': r['amt'], 'next': r.get('next'), 'pt': r['pt']} for r in BIG]}
