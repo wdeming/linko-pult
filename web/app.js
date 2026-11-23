@@ -305,6 +305,8 @@
       ttile('Просрочено на сегодня', sch[P.cols[0]], 'm', null, 'm', 'неоплаченные периоды подписок, в план не входит'));
     const cs = fc.concat([TOT, P.cols[0]]), rows = []; P.tab.forEach(([x, v]) => cs.forEach((c) => { if (v[c] != null) rows.push([x, c, v[c]]); }));
     ptab('tab', rows, 'm', {bold: /^[А-ЯЁ ]+$/}, cs);
+    const rr = []; P.rates.forEach(([b, n, c, rt, ns, nc, sch, loss]) => { rr.push([b, 'Ушло клиентов за 6 мес.', c + ' из ' + n + ' клиенто-мес.'], [b, 'Отток в месяц', rt], [b, 'Клиентов сейчас', nc], [b, 'Оплаты по графику в горизонте', sch], [b, 'Поправка на отток', -loss]); });
+    ptab('rates', rr, 'm', {cf: {'Отток в месяц': 'p', 'Клиентов сейчас': 'n'}});
     const LEN = ['Помесячно', '2–3 месяца', '4–6 месяцев', '7–12 месяцев'], lr = [];
     LEN.forEach((l) => fc.forEach((c) => { const v = P.bylen[l + '|' + c]; lr.push([l, c, v || 0]); }));
     ptab('len', lr, 'm', {row: 'Итого', col: true}, fc);

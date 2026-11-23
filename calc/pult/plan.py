@@ -25,7 +25,7 @@ C_OVER, C_CUR = 'Просрочено на сегодня', '%s %s (до %s)' % 
 COLS = [C_OVER, C_CUR] + [ml(m) for m in HM]
 db = OdooDB(); q = db.query
 # ---------------- 1. подписки ----------------
-SUBS = q(f"""select so.id, so.name, {PROD_SQL} prod, so.subscription_state st, so.next_invoice_date nid, so.start_date sd, so.currency_id cur,
+SUBS = q(f"""select so.id, so.name, so.partner_id pid, {PROD_SQL} prod, so.subscription_state st, so.next_invoice_date nid, so.start_date sd, so.currency_id cur,
   so.recurring_total rt, so.recurring_monthly rm, coalesce(p.billing_period_value, 1) bp, coalesce(pl.name->>'ru_RU', pl.name->>'en_US') plan, rp.name client,
   (select max(aml.deferred_end_date) from sale_order_line sol join sale_order_line_invoice_rel rel on rel.order_line_id=sol.id join account_move_line aml on aml.id=rel.invoice_line_id
      join account_move am on am.id=aml.move_id where sol.order_id=so.id and am.state='posted' and am.move_type='out_invoice') cov,
@@ -45,7 +45,7 @@ for s in SUBS:
     elif s['linv']: pt = addm(s['linv'], bp) - datetime.timedelta(days=1); basis = 'дата последнего счёта + период плана'
     else: pt = (s['sd'] or TODAY) - datetime.timedelta(days=1); basis = 'счетов нет — с даты начала подписки'
     line = LINE(s['prod'], s['st']); d = s['prod'] + '|' + s['st']
-    row = {'name': s['name'], 'client': s['client'], 'prod': s['prod'], 'st': ST[s['st']], 'plan': s['plan'] or '%d мес.' % bp, 'bp': bp, 'amt': amt, 'mrr': mrr, 'pt': pt.isoformat(), 'basis': basis, 'over': 0.0, 'over_n': 0, 'm': {}}
+    row = {'name': s['name'], 'pid': s['pid'], 'client': s['client'], 'prod': s['prod'], 'st': ST[s['st']], 'plan': s['plan'] or '%d мес.' % bp, 'bp': bp, 'amt': amt, 'mrr': mrr, 'pt': pt.isoformat(), 'basis': basis, 'over': 0.0, 'over_n': 0, 'm': {}}
     nxt = pt + datetime.timedelta(days=1); first_over = None
     while nxt <= H_END and amt > 0:
         if nxt < TODAY:
@@ -59,19 +59,42 @@ for s in SUBS:
         dd = (TODAY - first_over).days; b = 'до 30 дней' if dd <= 30 else '31–90 дней' if dd <= 90 else '91–180 дней' if dd <= 180 else 'больше 180 дней'
         AGE[(s['prod'] + ' ' + ST[s['st']], b)][0] += 1; AGE[(s['prod'] + ' ' + ST[s['st']], b)][1] += row['over']; row['age'] = b
     DET.append(row)
-# ---------------- 2. отток: средний месячный за 6 полных месяцев ----------------
+# ---------------- 2. отток ПО КЛИЕНТАМ и по размеру клиента: за 6 полных месяцев ----------------
+# клиент (в продукте) ушёл в месяце, если на начало месяца MRR у него был, а на конец — все его подписки этого продукта закрыты.
 P6 = [addm(M0, -i).strftime('%Y-%m') for i in range(6, 0, -1)]
-LOG = q(f"""select {PROD_SQL} prod, to_char(l.event_date,'YYYY-MM') m, l.event_type et, sum(case when l.currency_id=1 then l.amount_signed*{K} else l.amount_signed end) a
-  from sale_order_log l join sale_order so on so.id=l.order_id where l.event_date < date '{M0}' group by 1,2,3""")
-mv = collections.defaultdict(float)
-for r in LOG: mv[(r['prod'], r['m'], r['et'])] += float(r['a'])
-CHURN = {}
-for p in ('SFA', 'POS'):
-    num = den = 0.0
+LOG = q(f"""select {PROD_SQL} prod, so.partner_id pid, l.order_id o, coalesce(so.plan_id, 1) plan, so.first_contract_date fcd, to_char(l.event_date,'YYYY-MM') m, l.event_type et,
+  sum(case when l.currency_id=1 then l.amount_signed*{K} else l.amount_signed end) a
+  from sale_order_log l join sale_order so on so.id=l.order_id where l.event_date < date '{M0}' group by 1,2,3,4,5,6,7""")
+def bucket(p, v):
+    if p == 'POS': return 'POS: до 200 тыс в месяц' if v < 200e3 else 'POS: от 200 тыс в месяц'
+    return 'SFA: до 1 млн в месяц' if v < 1e6 else 'SFA: 1–3 млн в месяц' if v < 3e6 else 'SFA: от 3 млн в месяц'
+BUCKETS = ['SFA: до 1 млн в месяц', 'SFA: 1–3 млн в месяц', 'SFA: от 3 млн в месяц', 'POS: до 200 тыс в месяц', 'POS: от 200 тыс в месяц']
+CLM = collections.defaultdict(lambda: collections.defaultdict(float)); SBM = collections.defaultdict(lambda: collections.defaultdict(float)); SINFO = {}
+for r in LOG:
+    if r['prod'] not in ('SFA', 'POS'): continue
+    CLM[(r['pid'], r['prod'])][r['m']] += float(r['a']); SBM[r['o']][r['m']] += float(r['a']); SINFO[r['o']] = (r['prod'], r['plan'], r['fcd'])
+cumb = lambda mv, m: sum(v for mm, v in mv.items() if mm < m)
+cume = lambda mv, m: sum(v for mm, v in mv.items() if mm <= m)
+OBS = collections.defaultdict(lambda: [0, 0])          # корзина -> [клиенто-месяцев, ушло]
+for (pid, p), mv in CLM.items():
     for m in P6:
-        start = sum(v for (pp, mm, et), v in mv.items() if pp == p and mm < m)
-        num += -mv[(p, m, '2_churn')]; den += start
-    CHURN[p] = num / den if den else 0.0
+        st0 = cumb(mv, m)
+        if st0 <= 1: continue
+        o = OBS[bucket(p, st0)]; o[0] += 1; o[1] += 1 if cume(mv, m) <= 1 else 0
+RATE = {b: (OBS[b][1] / OBS[b][0] if OBS[b][0] else 0.0) for b in BUCKETS}
+# новые подписки (первый договор за последние 6 мес.) уходят чаще — свой отток для прогноза новых продаж
+NOBS = collections.defaultdict(lambda: [0, 0]); NEWM = collections.defaultdict(float)
+for o, mv in SBM.items():
+    p, plan, fcd = SINFO[o]
+    if not fcd: continue
+    for m in P6:
+        if not (addm(datetime.date.fromisoformat(m + '-01'), -6) <= fcd < datetime.date.fromisoformat(m + '-01')): continue
+        st0 = cumb(mv, m)
+        if st0 <= 1: continue
+        NOBS[p][0] += 1; NOBS[p][1] += 1 if cume(mv, m) <= 1 else 0
+for r in LOG:      # новый MRR помесячных подписок по журналу (событие «создание»), за 6 мес.
+    if r['prod'] in ('SFA', 'POS') and r['et'] == '0_creation' and r['m'] in P6 and r['plan'] == 1: NEWM[r['prod']] += float(r['a']) / 6
+NRATE = {p: (NOBS[p][1] / NOBS[p][0] if NOBS[p][0] else 0.0) for p in ('SFA', 'POS')}
 # ---------------- 3. новые продажи и разовые: среднее за 6 полных месяцев по счетам ----------------
 SFA_P, POS_P = (25, 26, 41, 42), (24, 40, 43, 32)
 OT = {30: 'Обучение', 33: 'Обучение', 37: 'Обучение', 38: 'Доработки', 39: 'Доработки'}
@@ -91,10 +114,6 @@ for x in INVL:
     if x['pid'] in SFA_P + POS_P:
         if x['so_id'] and first.get(x['so_id']) and first[x['so_id']].strftime('%Y-%m') == m: NEWF[('SFA' if x['pid'] in SFA_P else 'POS', m)] += a
     else: ONE[(OT.get(x['pid'], 'Perfect Store, производство и прочее'), m)] += a
-NEWM = {}      # новый MRR помесячных подписок — они платят и в следующие месяцы горизонта
-for p in ('SFA', 'POS'):
-    NEWM[p] = sum(float(r['rm'] or 0) * (K if r['cur'] == 1 else 1) for r in q(f"""select so.recurring_monthly rm, so.currency_id cur, {PROD_SQL} prod from sale_order so
-        where so.is_subscription and coalesce(so.plan_id,1)=1 and so.first_contract_date >= date '{P6[0]}-01' and so.first_contract_date < date '{M0}'""") if r['prod'] == p) / 6
 AVG_NEW = {p: sum(NEWF[(p, m)] for m in P6) / 6 for p in ('SFA', 'POS')}
 ONE_G = ['Обучение', 'Доработки', 'Perfect Store, производство и прочее']
 AVG_ONE = {g: sum(ONE[(g, m)] for m in P6) / 6 for g in ONE_G}
@@ -109,20 +128,24 @@ TAB = collections.OrderedDict()
 SUBL = [LINE(p, st) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')]
 for l in SUBL: TAB[l] = {C_OVER: OVER[l], **{c: SCH[(l, c)] for c in FC}}
 TAB['ПОДПИСКИ ПО ГРАФИКУ'] = {c: sum(TAB[l][c] for l in SUBL) for c in COLS}
-adj = {}
-for c in FC:
-    adj[c] = -sum(SCH[(LINE(p, st), c)] * (1 - (1 - CHURN[p]) ** KI[c]) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused'))
+CLNOW = collections.defaultdict(float)
+for x in DET: CLNOW[(x['pid'], x['prod'])] += x['mrr']
+adj = {c: 0.0 for c in FC}; BSTAT = {b: {'subs': 0, 'clients': set(), 'sch': 0.0, 'loss': 0.0} for b in BUCKETS}
+for x in DET:
+    b = bucket(x['prod'], CLNOW[(x['pid'], x['prod'])]); x['bucket'] = b; g = BSTAT[b]; g['subs'] += 1; g['clients'].add(x['pid'])
+    for c, a in x['m'].items():
+        loss = a * (1 - (1 - RATE[b]) ** KI[c]); adj[c] -= loss; g['sch'] += a; g['loss'] += loss
 TAB['Поправка на отток'] = adj
 TAB['ПОДПИСКИ С УЧЁТОМ ОТТОКА'] = {c: TAB['ПОДПИСКИ ПО ГРАФИКУ'][c] + adj[c] for c in FC}
-for p in ('SFA', 'POS'):
-    TAB['Новые продажи %s (прогноз)' % p] = {c: AVG_NEW[p] * SH[c] + NEWM[p] * max(0, KI[c] - 1 + (0 if c == C_CUR else REST)) for c in FC}
+for p in ('SFA', 'POS'):      # первая оплата новых — по факту; повторные оплаты новых помесячных — когорты прошлых месяцев горизонта с оттоком новых
+    TAB['Новые продажи %s (прогноз)' % p] = {c: AVG_NEW[p] * SH[c] + sum(NEWM[p] * SH[c0] * (1 - NRATE[p]) ** (KI[c] - KI[c0]) for c0 in FC if KI[c0] < KI[c]) for c in FC}
 for g in ONE_G: TAB['%s (прогноз)' % g] = {c: AVG_ONE[g] * SH[c] for c in FC}
 TAB['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ'] = {c: TAB['ПОДПИСКИ С УЧЁТОМ ОТТОКА'][c] + sum(TAB[k][c] for k in TAB if k.endswith('(прогноз)')) for c in FC}
 TAB['Справочно: среднее фактическое поступление за 6 мес.'] = {c: AVG_IN * SH[c] for c in FC}
 for k, v in TAB.items(): v['Итого за горизонт'] = sum(v.get(c, 0) or 0 for c in FC)
 BIG = sorted([r for r in DET if r['m']], key=lambda r: -max(r['m'].values()))[:40]
 res = {'today': TODAY.isoformat(), 'cols': COLS, 'months': HM, 'tab': list(TAB.items()), 'bylen': {k[0] + '|' + k[1]: v for k, v in BYLEN.items()},
-       'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'churn': CHURN, 'avg_new': AVG_NEW, 'new_mrr': NEWM, 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
+       'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'rates': [[b, OBS[b][0], OBS[b][1], RATE[b], BSTAT[b]['subs'], len(BSTAT[b]['clients']), BSTAT[b]['sch'], BSTAT[b]['loss']] for b in BUCKETS], 'nrate': NRATE, 'avg_new': AVG_NEW, 'new_mrr': dict(NEWM), 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
        'n_subs': {LINE(p, st): sum(1 for r in DET if r['prod'] == p and r['st'] == ST[st]) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')},
        'big': [{'name': r['name'], 'client': r['client'], 'prod': r['prod'], 'st': r['st'], 'plan': r['plan'], 'amt': r['amt'], 'next': r.get('next'), 'pt': r['pt']} for r in BIG]}
 # ---------------- Excel ----------------
@@ -138,17 +161,22 @@ for k, v in TAB.items():
 notes(ws, r + 1, [
   'Подписки — все подписки POS и SFA в работе и на паузе. «Оплачено по» = конец периода последнего счёта (или следующая дата счёта в подписке). Дальше каждый следующий период по плану подписки (месяц, 3, 6, 12 мес.) — ожидаемая оплата суммы периода в дату его начала. Сумма — текущая сумма подписки за период (доллары × 12 000).',
   '«Просрочено на сегодня» — периоды, которые начались до %s и не оплачены (счёта нет). В итог горизонта не входит: сколько из этого реально соберут — отдельный вопрос (см. лист «Просрочено»).' % TODAY.strftime('%d.%m.%Y'),
-  'Поправка на отток — средний месячный отток MRR за %s – %s по журналу MRR Odoo: SFA %.1f%%, POS %.1f%% в месяц, нарастающим итогом по месяцам горизонта.' % (ml(P6[0]), ml(P6[-1]), CHURN['SFA'] * 100, CHURN['POS'] * 100),
-  'Новые продажи — средняя первая оплата новых подписок за 6 мес. (SFA %.0f млн, POS %.0f млн в месяц) + ежемесячные оплаты новых помесячных подписок, подключённых в горизонте (новый MRR помесячных: SFA %.1f млн, POS %.1f млн в месяц).' % (AVG_NEW['SFA'] / 1e6, AVG_NEW['POS'] / 1e6, NEWM['SFA'] / 1e6, NEWM['POS'] / 1e6),
+  'Поправка на отток — по КЛИЕНТАМ и размеру клиента (лист «Отток по размеру»): доля клиентов, ушедших за месяц, за %s – %s по журналу MRR Odoo; клиент ушёл, если закрыты все его подписки продукта. Каждая подписка получает ставку своей корзины, нарастающим итогом: %s.' % (ml(P6[0]), ml(P6[-1]), '; '.join('%s — %.1f%%' % (b, RATE[b] * 100) for b in BUCKETS)),
+  'Новые продажи — средняя первая оплата новых подписок за 6 мес. (SFA %.0f млн, POS %.0f млн в месяц) + повторные оплаты новых помесячных подписок, подключённых раньше в горизонте (новый MRR помесячных по журналу: SFA %.1f млн, POS %.1f млн в месяц) с оттоком новых подписок (SFA %.1f%%, POS %.1f%% в месяц).' % (AVG_NEW['SFA'] / 1e6, AVG_NEW['POS'] / 1e6, NEWM['SFA'] / 1e6, NEWM['POS'] / 1e6, NRATE['SFA'] * 100, NRATE['POS'] * 100),
   'Разовые — среднее по счетам за 6 мес.: обучение %.1f млн, доработки %.1f млн, Perfect Store / производство / прочее %.1f млн в месяц. Текущий месяц — пропорционально оставшимся дням.' % tuple(AVG_ONE[g] / 1e6 for g in ONE_G),
   'Не учтено: расширения у текущих клиентов, повышение цен с 2027 года, оплаты долгов прошлых периодов.'])
 widths(ws, {'A': 50, **{LL(c): 15 for c in range(2, len(COLS) + 3)}}); ws.freeze_panes = 'B4'
 ws = wb.create_sheet('По подпискам')
-header(ws, 1, ['Подписка', 'Клиент', 'Продукт', 'Статус', 'План оплаты', 'Сумма за период', 'MRR', 'Оплачено по', 'Как определено', 'Следующая оплата', 'Просрочено, сумма', 'Просрочено, периодов'] + FC); r = 2
+header(ws, 1, ['Подписка', 'Клиент', 'Продукт', 'Статус', 'Размер клиента', 'План оплаты', 'Сумма за период', 'MRR', 'Оплачено по', 'Как определено', 'Следующая оплата', 'Просрочено, сумма', 'Просрочено, периодов'] + FC); r = 2
 for x in sorted(DET, key=lambda x: (x['prod'], x['st'], x['client'] or '')):
-    datarow(ws, r, [x['name'], x['client'], x['prod'], x['st'], x['plan'], round(x['amt']), round(x['mrr']), x['pt'], x['basis'], x.get('next'), round(x['over']) or None, x['over_n'] or None] + [round(x['m'][c]) if c in x['m'] else None for c in FC],
-            fmts=[None] * 5 + [NUM, NUM] + [None] * 3 + [NUM, NUM] + [NUM] * len(FC), blue_inputs=False); r += 1
-widths(ws, {'A': 10, 'B': 36, 'C': 7, 'D': 10, 'E': 13, 'F': 14, 'G': 12, 'H': 12, 'I': 30, 'J': 13, 'K': 14, 'L': 10, **{LL(c): 13 for c in range(13, 13 + len(FC))}}); ws.freeze_panes = 'C2'; ws.auto_filter.ref = 'A1:%s%d' % (LL(12 + len(FC)), r - 1)
+    datarow(ws, r, [x['name'], x['client'], x['prod'], x['st'], x.get('bucket'), x['plan'], round(x['amt']), round(x['mrr']), x['pt'], x['basis'], x.get('next'), round(x['over']) or None, x['over_n'] or None] + [round(x['m'][c]) if c in x['m'] else None for c in FC],
+            fmts=[None] * 6 + [NUM, NUM] + [None] * 3 + [NUM, NUM] + [NUM] * len(FC), blue_inputs=False); r += 1
+widths(ws, {'A': 10, 'B': 36, 'C': 7, 'D': 10, 'E': 22, 'F': 14, 'G': 12, 'H': 12, 'I': 30, 'J': 13, 'K': 14, 'L': 10, **{LL(c): 13 for c in range(13, 13 + len(FC))}}); ws.freeze_panes = 'C2'; ws.auto_filter.ref = 'A1:%s%d' % (LL(13 + len(FC)), r - 1)
+ws = wb.create_sheet('Отток по размеру')
+header(ws, 1, ['Размер клиента (MRR в продукте)', 'Клиенто-месяцев за 6 мес.', 'Ушло клиентов', 'Отток в месяц', 'Подписок сейчас', 'Клиентов сейчас', 'Оплаты по графику в горизонте', 'Поправка на отток']); r = 2
+for row_ in res['rates']: datarow(ws, r, [row_[0], row_[1], row_[2], row_[3], row_[4], row_[5], round(row_[6]), round(-row_[7])], fmts=[None, NUM, NUM, PCT, NUM, NUM, NUM, NUM], blue_inputs=False); r += 1
+datarow(ws, r + 1, ['Новые подписки (первый договор за 6 мес.): SFA %.1f%%, POS %.1f%% в месяц — для прогноза новых продаж' % (NRATE['SFA'] * 100, NRATE['POS'] * 100)], blue_inputs=False)
+widths(ws, {'A': 30, 'B': 16, 'C': 12, 'D': 12, 'E': 12, 'F': 12, 'G': 18, 'H': 16})
 ws = wb.create_sheet('Просрочено')
 header(ws, 1, ['Продукт и статус', 'Срок с первого неоплаченного периода', 'Подписок', 'Сумма, сум']); r = 2
 for k0, k1, n, a in res['age']: datarow(ws, r, [k0, k1, n, round(a)], fmts=[None, None, NUM, NUM], blue_inputs=False); r += 1
