@@ -137,15 +137,20 @@ for x in DET:
         loss = a * (1 - (1 - RATE[b]) ** KI[c]); adj[c] -= loss; g['sch'] += a; g['loss'] += loss
 TAB['Поправка на отток'] = adj
 TAB['ПОДПИСКИ С УЧЁТОМ ОТТОКА'] = {c: TAB['ПОДПИСКИ ПО ГРАФИКУ'][c] + adj[c] for c in FC}
-for p in ('SFA', 'POS'):      # первая оплата новых — по факту; повторные оплаты новых помесячных — когорты прошлых месяцев горизонта с оттоком новых
-    TAB['Новые продажи %s (прогноз)' % p] = {c: AVG_NEW[p] * SH[c] + sum(NEWM[p] * SH[c0] * (1 - NRATE[p]) ** (KI[c] - KI[c0]) for c0 in FC if KI[c0] < KI[c]) for c in FC}
+# Сезонность (Азиз, 23.11.2026): в декабре и январе продаж мало — новые продажи (первые оплаты SFA + POS) задаются вручную, сумма делится SFA/POS по среднему.
+MANUAL_NEW = {12: 22.5e6, 1: 30e6}        # декабрь 20–25 млн, январь ~30 млн
+CM = {C_CUR: TODAY.month}; CM.update({ml(m): int(m[5:7]) for m in HM})
+FTOT = AVG_NEW['SFA'] + AVG_NEW['POS']
+KN = {c: (MANUAL_NEW[CM[c]] / FTOT if CM[c] in MANUAL_NEW and FTOT else 1.0) for c in FC}     # во сколько раз месяц слабее среднего
+for p in ('SFA', 'POS'):      # первая оплата новых — по факту (или вручную); повторные оплаты новых помесячных — когорты прошлых месяцев горизонта с оттоком новых
+    TAB['Новые продажи %s (прогноз)' % p] = {c: AVG_NEW[p] * SH[c] * KN[c] + sum(NEWM[p] * SH[c0] * KN[c0] * (1 - NRATE[p]) ** (KI[c] - KI[c0]) for c0 in FC if KI[c0] < KI[c]) for c in FC}
 for g in ONE_G: TAB['%s (прогноз)' % g] = {c: AVG_ONE[g] * SH[c] for c in FC}
 TAB['ВСЕГО ПЛАН ПОСТУПЛЕНИЙ'] = {c: TAB['ПОДПИСКИ С УЧЁТОМ ОТТОКА'][c] + sum(TAB[k][c] for k in TAB if k.endswith('(прогноз)')) for c in FC}
 TAB['Справочно: среднее фактическое поступление за 6 мес.'] = {c: AVG_IN * SH[c] for c in FC}
 for k, v in TAB.items(): v['Итого за горизонт'] = sum(v.get(c, 0) or 0 for c in FC)
 BIG = sorted([r for r in DET if r['m']], key=lambda r: -max(r['m'].values()))[:40]
 res = {'today': TODAY.isoformat(), 'cols': COLS, 'months': HM, 'tab': list(TAB.items()), 'bylen': {k[0] + '|' + k[1]: v for k, v in BYLEN.items()},
-       'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'rates': [[b, OBS[b][0], OBS[b][1], RATE[b], BSTAT[b]['subs'], len(BSTAT[b]['clients']), BSTAT[b]['sch'], BSTAT[b]['loss']] for b in BUCKETS], 'nrate': NRATE, 'avg_new': AVG_NEW, 'new_mrr': dict(NEWM), 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
+       'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'rates': [[b, OBS[b][0], OBS[b][1], RATE[b], BSTAT[b]['subs'], len(BSTAT[b]['clients']), BSTAT[b]['sch'], BSTAT[b]['loss']] for b in BUCKETS], 'nrate': NRATE, 'manual_new': {str(k): v for k, v in MANUAL_NEW.items()}, 'avg_new': AVG_NEW, 'new_mrr': dict(NEWM), 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
        'n_subs': {LINE(p, st): sum(1 for r in DET if r['prod'] == p and r['st'] == ST[st]) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')},
        'big': [{'name': r['name'], 'client': r['client'], 'prod': r['prod'], 'st': r['st'], 'plan': r['plan'], 'amt': r['amt'], 'next': r.get('next'), 'pt': r['pt']} for r in BIG]}
 # ---------------- Excel ----------------
@@ -163,6 +168,7 @@ notes(ws, r + 1, [
   '«Просрочено на сегодня» — периоды, которые начались до %s и не оплачены (счёта нет). В итог горизонта не входит: сколько из этого реально соберут — отдельный вопрос (см. лист «Просрочено»).' % TODAY.strftime('%d.%m.%Y'),
   'Поправка на отток — по КЛИЕНТАМ и размеру клиента (лист «Отток по размеру»): доля клиентов, ушедших за месяц, за %s – %s по журналу MRR Odoo; клиент ушёл, если закрыты все его подписки продукта. Каждая подписка получает ставку своей корзины, нарастающим итогом: %s.' % (ml(P6[0]), ml(P6[-1]), '; '.join('%s — %.1f%%' % (b, RATE[b] * 100) for b in BUCKETS)),
   'Новые продажи — средняя первая оплата новых подписок за 6 мес. (SFA %.0f млн, POS %.0f млн в месяц) + повторные оплаты новых помесячных подписок, подключённых раньше в горизонте (новый MRR помесячных по журналу: SFA %.1f млн, POS %.1f млн в месяц) с оттоком новых подписок (SFA %.1f%%, POS %.1f%% в месяц).' % (AVG_NEW['SFA'] / 1e6, AVG_NEW['POS'] / 1e6, NEWM['SFA'] / 1e6, NEWM['POS'] / 1e6, NRATE['SFA'] * 100, NRATE['POS'] * 100),
+  'Декабрь и январь — сезонно слабые месяцы: новые продажи (первые оплаты SFA + POS) заданы менеджментом — декабрь 22,5 млн (20–25), январь 30 млн, делятся SFA / POS по среднему; повторные оплаты этих когорт уменьшены так же.',
   'Разовые — среднее по счетам за 6 мес.: обучение %.1f млн, доработки %.1f млн, Perfect Store / производство / прочее %.1f млн в месяц. Текущий месяц — пропорционально оставшимся дням.' % tuple(AVG_ONE[g] / 1e6 for g in ONE_G),
   'Не учтено: расширения у текущих клиентов, повышение цен с 2027 года, оплаты долгов прошлых периодов.'])
 widths(ws, {'A': 50, **{LL(c): 15 for c in range(2, len(COLS) + 3)}}); ws.freeze_panes = 'B4'
