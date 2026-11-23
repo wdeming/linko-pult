@@ -62,7 +62,8 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
         paid_to = max((a['d2'] for a in mine if a['d2'] > a['d1']), default=None)        # оплачено вперёд по периоду
         free = sorted(mine, key=lambda a: a['pay'])
         def covered(dd):         # период оплаты покрывает дату или оплата была в пределах 25 дней от неё (каждая оплата закрывает один платёж)
-            if any(a['d1'] <= dd <= a['d2'] and a['d2'] > a['d1'] for a in mine): return True
+            mid = dd + datetime.timedelta(days=15)      # платёж в дату D оплачивает период D…D+1 мес.: закрыт, если оплаченный период покрывает его середину
+            if any(a['d1'] <= mid <= a['d2'] and a['d2'] > a['d1'] for a in mine): return True
             for a in free:
                 if abs((a['pay'] - dd).days) <= 25: free.remove(a); return True
             return False
