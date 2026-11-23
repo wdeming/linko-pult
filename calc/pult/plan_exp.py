@@ -26,6 +26,8 @@ RULES = [
     (r'налог на аренду', None, r'налог\w* (на )?аренд'), (r'коммунальн', {'Обслуживание офиса'}, r'свет|газ|вод|коммунал|электр'),
     (r'cloud google', {'Google CLOUD'}, None), (r'google workspace', None, r'workspace'), (r'cloude для всех|anthropic claude', {'CLAUDE'}, None),
     (r'расходы офиса', {'Бакалея', 'Канцтовары'}, None)]
+FALLBACK = [(r'jetbrains|webstorm|pycharm|ssl', 'Лицензии и сертификаты'), (r'sentry|appstore|canva|gpt|claude|cloude', 'Прочие подписки'),
+            (r'visa|виза', 'Прочие расходы'), (r'сервер|hetzner|selectel|cloud', 'Хостинг и инфраструктура')]
 def addm(d, n):
     y, m = divmod(d.month - 1 + n, 12); y += d.year; m += 1
     return datetime.date(y, m, min(d.day, calendar.monthrange(y, m)[1]))
@@ -36,16 +38,17 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
     # ---- факт: реестр «Расходы»
     ACT = []
     for r in q("""select h.id, h.x_studio_date pay, h.x_studio_start_date d1, h.x_studio_end_date d2, coalesce(h.x_studio_rate, 0) rate, h.x_studio_notes nt,
-          coalesce(aa.name->>'ru_RU', aa.name->>'en_US', '') cat, (select coalesce(sum(l.x_studio_sum), 0) from x_custom_expenses_line_dc8d4 l where l.x_custom_expenses_id = h.id) s
+          coalesce(aa.name->>'ru_RU', aa.name->>'en_US', '') cat, coalesce(ap.name->>'ru_RU', ap.name->>'en_US', '') vid, (select coalesce(sum(l.x_studio_sum), 0) from x_custom_expenses_line_dc8d4 l where l.x_custom_expenses_id = h.id) s
         from x_custom_expenses h left join account_analytic_account aa on aa.id = h.x_studio_accountanalyticaccount
+        left join account_analytic_plan ap on ap.id = h.x_studio_accountanalyticplan
         where h.x_active is not false and h.x_studio_date is not null and h.x_studio_date >= date '2026-04-01'"""):
         d1 = r['d1'] or r['pay']; d2 = r['d2'] or d1
-        ACT.append({'pay': r['pay'], 'd1': min(d1, d2), 'd2': max(d1, d2), 'cat': r['cat'], 'note': clean(r['nt']).lower(), 'amt': float(r['s']) * (K if r['rate'] > 1 else 1), 'used': False})
+        ACT.append({'pay': r['pay'], 'd1': min(d1, d2), 'd2': max(d1, d2), 'cat': r['cat'], 'vid': r['vid'], 'note': clean(r['nt']).lower(), 'amt': float(r['s']) * (K if r['rate'] > 1 else 1), 'used': False})
     # ---- плановые платежи
     ITEMS = q("""select p.id, p.x_name nm, p.x_studio_date d, p.x_studio_payment_sum s, p.x_studio_repeat_payment rep, c.name cur, coalesce(st.x_name->>'ru_RU', st.x_name->>'en_US', '') stage
         from x_exp_plan p left join res_currency c on c.id = p.x_studio_currency_id left join x_exp_plan_stage st on st.id = p.x_studio_stage_id
         where p.x_active is not false and coalesce(p.x_studio_payment_sum, 0) > 0""")
-    SCH = collections.defaultdict(float); OVR = collections.defaultdict(float); DET = []
+    SCH = collections.defaultdict(float); OVR = collections.defaultdict(float); DET = []; SRC = collections.defaultdict(set)
     for it in ITEMS:
         nm = (it['nm'] if isinstance(it['nm'], str) else (it['nm'] or {}).get('ru_RU') or (it['nm'] or {}).get('en_US') or '').strip()
         amt = float(it['s']) * CUR_RATE.get(it['cur'] or 'UZS', 1)
@@ -58,6 +61,8 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
             return True
         mine = [a for a in ACT if matches(a)]
         for a in mine: a['used'] = True
+        cc = collections.Counter(a['cat'] for a in mine)
+        cat = cc.most_common(1)[0][0] if cc else next((c for pat, c in FALLBACK if re.search(pat, nm.lower())), 'Прочие подписки')
         due = it['d'] or TODAY.replace(day=1)
         paid_to = max((a['d2'] for a in mine if a['d2'] > a['d1']), default=None)        # оплачено вперёд по периоду
         free = sorted(mine, key=lambda a: a['pay'])
@@ -72,14 +77,14 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
                 if due <= H_END and covered(due): due = addm(due, 1)
                 else: break
         elif covered(due): due = None
-        row = {'name': nm, 'amt': amt, 'cur': it['cur'] or 'UZS', 'src_amt': float(it['s']), 'rep': bool(it['rep']), 'plan_date': str(it['d'] or ''), 'next': None, 'over': 0.0, 'n_fact': len(mine),
+        row = {'cat': cat, 'name': nm, 'amt': amt, 'cur': it['cur'] or 'UZS', 'src_amt': float(it['s']), 'rep': bool(it['rep']), 'plan_date': str(it['d'] or ''), 'next': None, 'over': 0.0, 'n_fact': len(mine),
                'last_pay': str(max((a['pay'] for a in mine), default='') or ''), 'paid_to': str(paid_to or ''), 'm': {}}
         d = due
         while d and d <= H_END:
             if d < TODAY:
-                if d >= addm(TODAY, -3): OVR[nm] += amt; row['over'] += amt; SCH[('Просроченные плановые платежи — оплатить сейчас', C_CUR)] += amt; row['m'][C_CUR] = row['m'].get(C_CUR, 0) + amt
+                if d >= addm(TODAY, -3): OVR[cat] += amt; row['over'] += amt; SCH[(cat, C_CUR)] += amt; SRC[cat].add('план (просрочено — в текущем месяце)'); row['m'][C_CUR] = row['m'].get(C_CUR, 0) + amt
             else:
-                c = col(d); SCH[('Плановые платежи (реестр «Плановые расходы»)', c)] += amt; row['m'][c] = row['m'].get(c, 0) + amt; row['next'] = row['next'] or str(d)
+                c = col(d); SCH[(cat, c)] += amt; SRC[cat].add('плановый реестр'); row['m'][c] = row['m'].get(c, 0) + amt; row['next'] = row['next'] or str(d)
             if not it['rep']: break
             d = addm(d, 1)
         DET.append(row)
@@ -108,32 +113,42 @@ def build(q, TODAY, CUR_END, HM, ml, C_CUR, FC):
     cols = [C_CUR] + [ml(m) for m in HM]
     for i, c in enumerate(cols):
         if i == 0: continue                                    # остаток текущего месяца: аванс уже выплачен
-        FOT[('Оклады', c)] += (REM if i == 1 else (1 - A0) * S) + A0 * S
-        FOT[('KPI ежемесячный (в ведомости)', c)] += KPI_M
+        SCH[('Оклад', c)] += (REM if i == 1 else (1 - A0) * S) + A0 * S
+        SCH[('KPI', c)] += KPI_M
         mm = int(HM[i - 1][5:7])
-        if mm in (1, 4, 7, 10): FOT[('KPI квартальный (по последнему факту)', c)] += QKPI
+        if mm in (1, 4, 7, 10): SCH[('KPI', c)] += QKPI
+    SRC['Оклад'].add('ведомость ЗП'); SRC['KPI'].add('ведомость ЗП + квартальный KPI'); OVR['Оклад'] += OLD
     # ---- вне плана: факт по дате оплаты за 3 полных месяца, чего нет в плановом реестре и не ФОТ
     P3 = [addm(m0, -i).strftime('%Y-%m') for i in (3, 2, 1)]
     import fin_groups as FG
     UNP = collections.defaultdict(float); UNN = collections.defaultdict(float)
     for a in ACT:
         if a['used'] or a['cat'] in FOT_CATS or a['cat'] == 'Налоги ЗП' or a['pay'].strftime('%Y-%m') not in P3: continue
-        g = 'Техника и мебель' if a['cat'] in CAPEX else FG.group(a['cat'])
-        UNP[g] += a['amt'] / 3
+        UNP[a['cat'] or 'Без статьи'] += a['amt'] / 3
         key = re.sub(r'\d[\d .,]*', '', a['note'])[:40].strip() or a['cat'].lower()
         UNN[(a['cat'], key)] += a['amt'] / 3
     share = lambda c: ((CUR_END - TODAY).days + 1) / calendar.monthrange(TODAY.year, TODAY.month)[1] if c == C_CUR else 1.0
-    TAB = collections.OrderedDict()
-    for k in ('Плановые платежи (реестр «Плановые расходы»)', 'Просроченные плановые платежи — оплатить сейчас'):
-        TAB[k] = {c: SCH[(k, c)] for c in cols}
-    for k in ('Оклады', 'KPI ежемесячный (в ведомости)', 'KPI квартальный (по последнему факту)'):
-        TAB[k] = {c: FOT[(k, c)] for c in cols}
-    for g, v in sorted(UNP.items(), key=lambda z: -z[1]):
-        TAB['Вне плана: %s' % g] = {c: v * share(c) for c in cols}
-    TAB['ВСЕГО ПЛАН РАСХОДОВ'] = {c: sum(TAB[k][c] for k in TAB) for c in cols}
-    for v in TAB.values(): v['Итого за горизонт'] = sum(v[c] for c in cols)
-    TAB['Долги по ЗП прошлых периодов (в ведомости)'] = {'Долги прошлых периодов': OLD}
-    TAB['Просроченные плановые платежи — оплатить сейчас']['Долги прошлых периодов'] = sum(OVR.values())
+    for cat, v in UNP.items():
+        SRC[cat].add('среднее факта за 3 мес. (нет в плановом реестре)')
+        for c in cols: SCH[(cat, c)] += v * share(c)
+    VC = collections.defaultdict(collections.Counter)
+    for a in ACT: VC[a['cat']][a['vid']] += 1
+    vid_of = lambda cat: 'Затраты на персонал' if cat in ('Оклад', 'KPI', 'Налоги ЗП') else (VC[cat].most_common(1)[0][0] if VC[cat] else 'Прочее') or 'Прочее'
+    CATS = sorted({k[0] for k in SCH} | set(OVR))
+    ORDER = ['Затраты на персонал', 'Административные расходы', 'IT услуги', 'Операционные расходы', 'Услуги связи и интернет']
+    VIDS = ORDER + sorted({vid_of(c) for c in CATS} - set(ORDER))
+    TAB = collections.OrderedDict(); allc = cols + ['Итого за горизонт', 'Долги прошлых периодов']
+    for vd in VIDS:
+        cs = [c0 for c0 in CATS if vid_of(c0) == vd]
+        if not cs: continue
+        rows_ = []
+        for c0 in cs:
+            v = {c: SCH[(c0, c)] for c in cols}; v['Итого за горизонт'] = sum(v[c] for c in cols); v['Долги прошлых периодов'] = OVR.get(c0, 0.0)
+            v['Как считается'] = '; '.join(sorted(SRC[c0])); rows_.append((c0, v))
+        TAB[vd.upper()] = {c: sum(v[c] for _, v in rows_) for c in allc}
+        for c0, v in sorted(rows_, key=lambda z: -z[1]['Итого за горизонт']): TAB[c0] = v
+    SUBT = {vd.upper() for vd in VIDS}
+    TAB['ВСЕГО ПЛАН РАСХОДОВ'] = {c: sum(v[c] for k, v in TAB.items() if k in SUBT) for c in allc}
     top = sorted(([c, n, v] for (c, n), v in UNN.items() if v >= 300e3), key=lambda z: -z[2])[:25]
     info = {'S': S, 'paid_cur': paid_cur, 'REM': REM, 'A0': A0, 'KPI_M': KPI_M, 'QKPI': QKPI, 'OLD': OLD, 'wages': cur_w['nm'] if isinstance(cur_w['nm'], str) else (cur_w['nm'] or {}).get('ru_RU') or (cur_w['nm'] or {}).get('en_US') or '', 'P3': P3, 'RUB': RUB}
     return TAB, DET, top, info

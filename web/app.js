@@ -311,11 +311,11 @@
         ttile('Чистый поток за горизонт', FL['ЧИСТЫЙ ПОТОК'][TOT], 'm', null, 'm', 'поступления минус расходы'),
         ttile('Минимальный остаток денег', ob[minC], 'm', null, 'm', minC + '; на сегодня ' + fmt(P.cash0, 'm') + ', займы не учтены'));
       const ec = P.ecols, er = []; P.etab.forEach(([x, v]) => ec.forEach((c) => { if (v[c] != null && (v[c] !== 0 || c !== 'Долги прошлых периодов')) er.push([x, c, v[c]]); }));
-      ptab('exp', er, 'm', {bold: /^[А-ЯЁ ]+$/}, ec);
+      ptab('exp', er, 'm', {bold: /^(?=.*[А-ЯЁ])[А-ЯЁA-Z ,«»]+$/}, ec);
       const fr = []; P.flow.forEach(([x, v]) => fc.concat([TOT]).forEach((c) => { if (v[c] != null) fr.push([x, c, v[c]]); }));
       ptab('flow', fr, 'm', {bold: /^[А-ЯЁ ]+$|^Остаток/}, fc.concat([TOT]));
       const ir = []; P.eitems.slice().sort((a, b) => b.amt - a.amt).forEach((x) => { const k = x.name;
-        [['Сумма, сум', x.amt], ['Повторяется', x.rep ? 'ежемесячно' : 'разово'], ['Дата в реестре', dmy(x.plan_date)], ['Последняя оплата', dmy(x.last_pay)], ['Оплачено по', dmy(x.paid_to)], ['Следующий платёж', dmy(x.next)], ['Просрочено', x.over || null]].forEach(([c, v]) => ir.push([k, c, v])); });
+        [['Статья', x.cat], ['Сумма, сум', x.amt], ['Повторяется', x.rep ? 'ежемесячно' : 'разово'], ['Дата в реестре', dmy(x.plan_date)], ['Последняя оплата', dmy(x.last_pay)], ['Оплачено по', dmy(x.paid_to)], ['Следующий платёж', dmy(x.next)], ['Просрочено', x.over || null]].forEach(([c, v]) => ir.push([k, c, v])); });
       ptab('eitems', ir, 'm', {cf: {'Сумма, сум': 'm', 'Просрочено': 'm'}});
       ptab('unpl', P.unplanned.map(([c, n, v]) => [n + ' · ' + c, 'В среднем в месяц', v]), 'm', {col: true});
     }
