@@ -5,11 +5,11 @@ python3 pult/plan.py <папка вывода>  → plan.json и План_пос
    каждый следующий период подписки (по её плану — месяц, 2–12 мес.) — ожидаемая оплата суммы периода в дату начала периода.
    Неоплаченные периоды, начавшиеся до сегодня, — «просрочено» (в план месяцев не входит).
 2) Поправка на отток — средний месячный отток MRR за последние 6 полных месяцев (журнал MRR), нарастающим итогом.
-3) Новые продажи и разовые (обучение, доработки, Perfect Store, производство) — среднее за последние 6 полных месяцев по счетам."""
+3) Новые продажи (SFA — вместе с допродуктами AI ассистент и Perfect store) и разовые (обучение, доработки, производство) — среднее за последние 6 полных месяцев по счетам."""
 import sys, os, json, datetime, calendar, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from odoo_db import OdooDB
-from cls import PROD_SQL
+from cls import PROD_SQL, PNAME, FAM
 K = 12000; OUT = sys.argv[1] if len(sys.argv) > 1 else '.'
 TODAY = datetime.date.fromisoformat(os.environ['PLAN_TODAY']) if os.environ.get('PLAN_TODAY') else datetime.date.today()
 def addm(d, n):
@@ -34,11 +34,11 @@ SUBS = q(f"""select so.id, so.name, so.partner_id pid, {PROD_SQL} prod, so.subsc
  from sale_order so left join sale_subscription_plan p on p.id=so.plan_id left join sale_subscription_plan pl on pl.id=so.plan_id left join res_partner rp on rp.id=so.partner_id
  where so.is_subscription and so.subscription_state in ('3_progress','4_paused')""")
 ST = {'3_progress': 'в работе', '4_paused': 'на паузе'}
-LINE = lambda p, st: 'Подписки %s — %s' % (p, ST[st])
+LINE = lambda p, st: 'Подписки %s — %s' % (PNAME.get(p, p), ST[st])   # SFA / POS / AI ассистент / Perfect store (поле «Тип подписки»)
 SCH = collections.defaultdict(float); OVER = collections.defaultdict(float); BYLEN = collections.defaultdict(float); DET = []; AGE = collections.defaultdict(lambda: [0, 0.0])
 plen = lambda bp: 'Помесячно' if bp <= 1 else '2–3 месяца' if bp <= 3 else '4–6 месяцев' if bp <= 6 else '7–12 месяцев'
 for s in SUBS:
-    if s['prod'] not in ('POS', 'SFA'): continue
+    if s['prod'] not in ('POS', 'SFA', 'AI', 'PS'): continue
     bp = int(s['bp'] or 1); amt = float(s['rt'] or 0) * (K if s['cur'] == 1 else 1); mrr = float(s['rm'] or 0) * (K if s['cur'] == 1 else 1)
     c = [x for x in (s['cov'], (s['nid'] - datetime.timedelta(days=1)) if s['nid'] else None) if x]
     if c: pt = max(c); basis = 'период последнего счёта / следующая дата счёта в подписке'
@@ -57,7 +57,7 @@ for s in SUBS:
         nxt = addm(nxt, bp)
     if first_over:
         dd = (TODAY - first_over).days; b = 'до 30 дней' if dd <= 30 else '31–90 дней' if dd <= 90 else '91–180 дней' if dd <= 180 else 'больше 180 дней'
-        AGE[(s['prod'] + ' ' + ST[s['st']], b)][0] += 1; AGE[(s['prod'] + ' ' + ST[s['st']], b)][1] += row['over']; row['age'] = b
+        AGE[(PNAME.get(s['prod'], s['prod']) + ' ' + ST[s['st']], b)][0] += 1; AGE[(PNAME.get(s['prod'], s['prod']) + ' ' + ST[s['st']], b)][1] += row['over']; row['age'] = b
     DET.append(row)
 # ---------------- 2. отток ПО КЛИЕНТАМ и по размеру клиента: за 6 полных месяцев ----------------
 # клиент (в продукте) ушёл в месяце, если на начало месяца MRR у него был, а на конец — все его подписки этого продукта закрыты.
@@ -104,18 +104,19 @@ INVL = q(f"""select l.product_id pid, m.invoice_date d, so.id so_id,
  left join sale_order_line_invoice_rel rel on rel.invoice_line_id=l.id left join sale_order_line sol on sol.id=rel.order_line_id left join sale_order so on so.id=sol.order_id and so.is_subscription
  where m.state='posted' and m.move_type in ('out_invoice','out_refund') and l.display_type='product'""")
 first = {}
+ADD_P = (35, 44)          # Perfect store, AI ассистент — с 26.11.2026 отдельные подписки (линейка SFA), не разовая выручка
 for x in INVL:
-    if x['so_id'] and x['pid'] in SFA_P + POS_P: first[x['so_id']] = min(first.get(x['so_id'], x['d']), x['d'])
+    if x['so_id'] and x['pid'] in SFA_P + POS_P + ADD_P: first[x['so_id']] = min(first.get(x['so_id'], x['d']), x['d'])
 NEWF = collections.defaultdict(float); ONE = collections.defaultdict(float)
 for x in INVL:
     m = x['d'].strftime('%Y-%m')
     if m not in P6: continue
     a = float(x['a'] or 0)
-    if x['pid'] in SFA_P + POS_P:
-        if x['so_id'] and first.get(x['so_id']) and first[x['so_id']].strftime('%Y-%m') == m: NEWF[('SFA' if x['pid'] in SFA_P else 'POS', m)] += a
-    else: ONE[(OT.get(x['pid'], 'Perfect Store, производство и прочее'), m)] += a
+    if x['pid'] in SFA_P + POS_P + ADD_P:
+        if x['so_id'] and first.get(x['so_id']) and first[x['so_id']].strftime('%Y-%m') == m: NEWF[('POS' if x['pid'] in POS_P else 'SFA', m)] += a
+    else: ONE[(OT.get(x['pid'], 'Производство и прочее'), m)] += a
 AVG_NEW = {p: sum(NEWF[(p, m)] for m in P6) / 6 for p in ('SFA', 'POS')}
-ONE_G = ['Обучение', 'Доработки', 'Perfect Store, производство и прочее']
+ONE_G = ['Обучение', 'Доработки', 'Производство и прочее']
 AVG_ONE = {g: sum(ONE[(g, m)] for m in P6) / 6 for g in ONE_G}
 IN6 = q(f"""select coalesce(sum(case when c.name='UZS' then p.amount_company_currency_signed else p.amount*{K} end),0) s from account_payment p join account_move am on am.id=p.move_id
   join res_currency c on c.id=p.currency_id where am.state='posted' and p.payment_type='inbound' and not p.is_internal_transfer and am.date >= date '{P6[0]}-01' and am.date < date '{M0}'""")[0]['s']
@@ -125,14 +126,14 @@ REST = ((CUR_END - TODAY).days + 1) / calendar.monthrange(TODAY.year, TODAY.mont
 KI = {C_CUR: 0}; KI.update({ml(m): i + 1 for i, m in enumerate(HM)}); SH = {C_CUR: REST}; SH.update({ml(m): 1.0 for m in HM})
 FC = COLS[1:]
 TAB = collections.OrderedDict()
-SUBL = [LINE(p, st) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')]
+SUBL = [LINE(p, st) for p in ('SFA', 'POS', 'AI', 'PS') for st in ('3_progress', '4_paused') if p in ('SFA', 'POS') or any(r['prod'] == p and r['st'] == ST[st] for r in DET)]
 for l in SUBL: TAB[l] = {C_OVER: OVER[l], **{c: SCH[(l, c)] for c in FC}}
 TAB['ПОДПИСКИ ПО ГРАФИКУ'] = {c: sum(TAB[l][c] for l in SUBL) for c in COLS}
 CLNOW = collections.defaultdict(float)
-for x in DET: CLNOW[(x['pid'], x['prod'])] += x['mrr']
+for x in DET: CLNOW[(x['pid'], FAM.get(x['prod'], x['prod']))] += x['mrr']     # размер клиента — по всей линейке (SFA + допродукты)
 adj = {c: 0.0 for c in FC}; BSTAT = {b: {'subs': 0, 'clients': set(), 'sch': 0.0, 'loss': 0.0} for b in BUCKETS}
 for x in DET:
-    b = bucket(x['prod'], CLNOW[(x['pid'], x['prod'])]); x['bucket'] = b; g = BSTAT[b]; g['subs'] += 1; g['clients'].add(x['pid'])
+    fp = FAM.get(x['prod'], x['prod']); b = bucket(fp, CLNOW[(x['pid'], fp)]); x['bucket'] = b; g = BSTAT[b]; g['subs'] += 1; g['clients'].add(x['pid'])
     for c, a in x['m'].items():
         loss = a * (1 - (1 - RATE[b]) ** KI[c]); adj[c] -= loss; g['sch'] += a; g['loss'] += loss
 TAB['Поправка на отток'] = adj
@@ -151,7 +152,7 @@ for k, v in TAB.items(): v['Итого за горизонт'] = sum(v.get(c, 0)
 BIG = sorted([r for r in DET if r['m']], key=lambda r: -max(r['m'].values()))[:40]
 res = {'today': TODAY.isoformat(), 'cols': COLS, 'months': HM, 'tab': list(TAB.items()), 'bylen': {k[0] + '|' + k[1]: v for k, v in BYLEN.items()},
        'age': [[k[0], k[1], v[0], v[1]] for k, v in sorted(AGE.items())], 'rates': [[b, OBS[b][0], OBS[b][1], RATE[b], BSTAT[b]['subs'], len(BSTAT[b]['clients']), BSTAT[b]['sch'], BSTAT[b]['loss']] for b in BUCKETS], 'nrate': NRATE, 'manual_new': {str(k): v for k, v in MANUAL_NEW.items()}, 'avg_new': AVG_NEW, 'new_mrr': dict(NEWM), 'avg_one': AVG_ONE, 'avg_in': AVG_IN, 'p6': P6,
-       'n_subs': {LINE(p, st): sum(1 for r in DET if r['prod'] == p and r['st'] == ST[st]) for p in ('SFA', 'POS') for st in ('3_progress', '4_paused')},
+       'n_subs': {l: sum(1 for r in DET if LINE(r['prod'], {'в работе': '3_progress', 'на паузе': '4_paused'}[r['st']]) == l) for l in SUBL},
        'big': [{'name': r['name'], 'client': r['client'], 'prod': r['prod'], 'st': r['st'], 'plan': r['plan'], 'amt': r['amt'], 'next': r.get('next'), 'pt': r['pt']} for r in BIG]}
 # ---------------- плановые расходы и денежный поток ----------------
 import plan_exp

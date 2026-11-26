@@ -8,9 +8,11 @@ from openpyxl.utils import get_column_letter as L
 from style_lib import *
 from cfg_cut import *
 c = json.load(open(J('const'))); LN = json.load(open(J('exp_lines'), encoding='utf-8')); EX = json.load(open(J('exp'), encoding='utf-8'))
-MRR_POS, MRR_SFA = c['MRR']['POS'], c['MRR']['SFA']
+# SFA здесь — вся линейка SFA: основные подписки + допродукты AI ассистент и Perfect store (их обслуживают те же отделы и тот же хостинг)
+_SF = [x for x in ('SFA', 'AI', 'PS') if x in c['MRR']]
+MRR_POS, MRR_SFA = c['MRR']['POS'], sum(c['MRR'][x] for x in _SF)
 N_POS_ACT, MRR_POS_ACT = c['SPLIT']['POS']['3_progress']; N_POS_PAUSE, MRR_POS_PAUSE = c['SPLIT']['POS']['4_paused']
-N_SFA_ACT, MRR_SFA_ACT = c['SPLIT']['SFA']['3_progress']; N_SFA_PAUSE, MRR_SFA_PAUSE = c['SPLIT']['SFA']['4_paused']
+N_SFA_ACT, MRR_SFA_ACT = [sum(c['SPLIT'][x]['3_progress'][i] for x in _SF) for i in (0, 1)]; N_SFA_PAUSE, MRR_SFA_PAUSE = [sum(c['SPLIT'][x]['4_paused'][i] for x in _SF) for i in (0, 1)]
 D = datetime.date.fromisoformat
 MS = [m for m in MON if m >= '2026-04']                      # помесячный учёт расходов в Odoo — с апреля 2026
 def split(a, d1, d2):
@@ -125,6 +127,7 @@ notes(ws, 27, ['Как считалось:',
   '  • Внедрение — Onboarding SFA на SFA, остаток Onboarding POS на POS. Ключевые клиенты — целиком на SFA (удержание, не привлечение).',
   '  • Хостинг — статья «Хостинг и инфраструктура» за период месяца, делится между продуктами пропорционально MRR (в расходах признака продукта нет).',
   '  • KPI начисляется неравномерно (иногда за несколько месяцев разом), поэтому себестоимость по месяцам может скакать — на листе «ФОТ по отделам» есть среднее.',
+  '  • SFA — вся линейка SFA: основные подписки и допродукты AI ассистент и Perfect store (отдельные подписки на сервере SFA с 26.11.2026).',
   'Что НЕ включено: ФОТ разработки, продаж и маркетинга, обед, аутсорс, аренда офиса и административные расходы, SaaS-подписки, связь.'])
 # ============ Сотрудники (справочно) ============
 ws = wb.create_sheet('Сотрудники отделов')

@@ -7,6 +7,9 @@ RM = ['', 'янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 
 ml = lambda m: '%s %s' % (RM[int(m[5:7])], m[2:4])
 cuts = sorted(os.path.basename(d) for d in glob.glob(os.path.join(P, 'work', '20*')) if os.path.exists(os.path.join(d, 'stamp.json')))
 PP, F = 'POS', 'SFA'
+# продукты по полю «Тип подписки» (с 26.11.2026): основные SFA / POS + допродукты SFA — AI ассистент и Perfect store (отдельные подписки)
+ALLP = (F, PP, 'AI', 'PS'); ADD = ('AI', 'PS'); PN = {F: 'SFA', PP: 'POS', 'AI': 'AI ассистент', 'PS': 'Perfect store'}; FAMP = {F: F, 'AI': F, 'PS': F, PP: PP}
+REVK = ('Подписки SFA', 'Подписки POS', 'Подписки AI ассистент', 'Подписки Perfect store', 'Разовые работы и прочее')
 DOCS = {'mrr': 'MRR_и_когортное_удержание_2026_на_%s.xlsx', 'churn': 'Отток_подписок_причины_%s_2026_на_%s.xlsx', 'clients': 'Клиентская_база_продукты_сегменты_на_%s.xlsx',
         'multi': 'Клиенты_с_несколькими_подписками_на_%s.xlsx', 'top20': 'Концентрация_выручки_и_условия_топ20_на_%s.xlsx', 'cost': 'Себестоимость_поддержки_внедрения_инфраструктуры_на_%s.xlsx',
         'metrics': 'Ключевые_метрики_SaaS_на_%s_с_разовой.xlsx', 'calls': 'Обзвоны_клиентов_сырая_выгрузка_Odoo_на_%s.xlsx',
@@ -37,38 +40,45 @@ for cut in cuts:
     def ser(chart, x, s, v):
         series.append({'id': '%s.%s.%s.%s' % (cut, chart, x, s), 'cut': cut, 'chart': chart, 'x': x, 's': s, 'v': None if v is None else v if isinstance(v, str) else round(float(v), 6)})
     mov = lambda e, p: M['mov'].get('%s|%s|%s' % (p, m, e), 0)
-    tm = R['MRR'][PP] + R['MRR'][F]; tmj = tm
+    MR_ = {p: R['MRR'].get(p, 0.0) for p in ALLP}; tm = sum(MR_.values()); tmj = tm
     # --- сводка и MRR
     add('mrr', 'mrr_total', 'MRR всего', tm, 'm', 'up'); add('mrr', 'mrr_sfa', 'MRR SFA', R['MRR'][F], 'm', 'up', F); add('mrr', 'mrr_pos', 'MRR POS', R['MRR'][PP], 'm', 'up', PP)
+    for p in ADD:
+        if p in R['MRR']: add('mrr', 'mrr_' + p.lower(), 'MRR ' + PN[p], R['MRR'][p], 'm', 'up', p)
     _sp = const['SPLIT']
-    add('mrr', 'mrr_paused', 'в т.ч. MRR подписок на паузе (входит в MRR всего)', _sp[PP]['4_paused'][1] + _sp[F]['4_paused'][1], 'm', '')
-    add('mrr', 'subs_paused', 'в т.ч. подписок на паузе (входят в базу)', _sp[PP]['4_paused'][0] + _sp[F]['4_paused'][0], 'n', '')
+    add('mrr', 'mrr_paused', 'в т.ч. MRR подписок на паузе (входит в MRR всего)', sum(_sp[p]['4_paused'][1] for p in ALLP if p in _sp), 'm', '')
+    add('mrr', 'subs_paused', 'в т.ч. подписок на паузе (входят в базу)', sum(_sp[p]['4_paused'][0] for p in ALLP if p in _sp), 'n', '')
     STRU = {'3_progress': 'в работе', '4_paused': 'на паузе', '6_churn': 'закрыта', '5_renewed': 'продлена', '1_draft': 'черновик', '2_renewal': 'продление', '7_upsell': 'допродажа'}
     for e in sorted(const.get('JERR') or [], key=lambda e: -abs(e['log'] - e['sub'])):
         lab = '%s · %s' % (e['name'], STRU.get(e['st'], e['st'] or ''))
         ser('mrr_jerr', lab, 'По подписке', e['sub']); ser('mrr_jerr', lab, 'В журнале Odoo', e['log']); ser('mrr_jerr', lab, 'Разница', e['log'] - e['sub'])
     add('mrr', 'subs', 'Подписок в базе', len(base), 'n', 'up'); add('mrr', 'subs_sfa', 'Подписок SFA', R['SRV'][F], 'n', 'up', F); add('mrr', 'subs_pos', 'Подписок POS', R['SRV'][PP], 'n', 'up', PP)
+    for p in ADD:
+        if p in R['SRV']: add('mrr', 'subs_' + p.lower(), 'Подписок ' + PN[p], R['SRV'][p], 'n', 'up', p)
     # потоки MRR: всего, SFA, POS
     for key, lab, e, sign, good in (('new', 'Новые продажи за месяц', '0_creation', 1, 'up'), ('exp', 'Расширения за месяц', '1_expansion', 1, 'up'),
                                     ('con', 'Сокращения за месяц', '15_contraction', -1, 'down'), ('chu', 'Отток за месяц', '2_churn', -1, 'down')):
-        add('mrr', key + '_total', lab + ', всего', sign * (mov(e, F) + mov(e, PP)), 'm', good)
-        for p in (F, PP): add('mrr', key + '_' + p, '%s, %s' % (lab, p), sign * mov(e, p), 'm', good, p)
-    st = {p: M['GN']['%s|%s' % (p, m)]['start'] for p in (F, PP)}; S0 = st[F] + st[PP]
-    lost = sum(mov('2_churn', p) + mov('15_contraction', p) for p in (F, PP)); gain = sum(mov('1_expansion', p) for p in (F, PP))
+        add('mrr', key + '_total', lab + ', всего', sign * sum(mov(e, p) for p in ALLP), 'm', good)
+        for p in ALLP:
+            if p in (F, PP) or p in R['MRR']: add('mrr', key + '_' + p, '%s, %s' % (lab, PN[p]), sign * mov(e, p), 'm', good, p)
+    _gn = {p: M['GN'].get('%s|%s' % (p, m)) for p in ALLP}; S0 = sum(g['start'] for g in _gn.values() if g)
+    lost = sum(mov('2_churn', p) + mov('15_contraction', p) for p in ALLP if _gn[p]); gain = sum(mov('1_expansion', p) for p in ALLP if _gn[p])
     add('mrr', 'grr_total', 'GRR месяца, всего', (S0 + lost) / S0, 'p', 'up')
     for p in (F, PP): add('mrr', 'grr_' + p, 'GRR месяца, %s' % p, R['GRR'][p], 'p', 'up', p)
     add('mrr', 'nrr_total', 'NRR месяца, всего', (S0 + lost + gain) / S0, 'p', 'up')
     for p in (F, PP): add('mrr', 'nrr_' + p, 'NRR месяца, %s' % p, R['NRR'][p], 'p', 'up', p)
+    for p in ALLP:
+        for x in R['series'].get(p, []):
+            ser('mrr_end', ml(x['m']), PN[p], x['end'])
+            if p in (F, PP):
+                for k, nm in (('new', 'Новые'), ('exp', 'Расширения'), ('con', 'Сокращения'), ('chu', 'Отток')): ser('flow_' + p, ml(x['m']), nm, x[k])
     for p in (F, PP):
-        for x in R['series'][p]:
-            ser('mrr_end', ml(x['m']), p, x['end'])
-            for k, nm in (('new', 'Новые'), ('exp', 'Расширения'), ('con', 'Сокращения'), ('chu', 'Отток')): ser('flow_' + p, ml(x['m']), nm, x[k])
         for k, g in M['GN'].items():
             if k.startswith(p + '|'): ser('retention', ml(k.split('|')[1]), 'GRR ' + p, g['grr']); ser('retention', ml(k.split('|')[1]), 'NRR ' + p, g['nrr'])
         for a in surv[p]: ser('survival', '%d мес' % a[0], p, a[3])
     for mm in sorted({k.split('|')[1] for k in M['GN']}):
-        g = [M['GN'].get('%s|%s' % (p, mm)) for p in (F, PP)]
-        if all(g):
+        g = [x for x in (M['GN'].get('%s|%s' % (p, mm)) for p in ALLP) if x]
+        if M['GN'].get('%s|%s' % (F, mm)) and M['GN'].get('%s|%s' % (PP, mm)):
             s0 = sum(x['start'] for x in g)
             ser('retention', ml(mm), 'GRR всего', sum(x['start'] * x['grr'] for x in g) / s0); ser('retention', ml(mm), 'NRR всего', sum(x['start'] * x['nrr'] for x in g) / s0)
     sv = {}
@@ -100,13 +110,15 @@ for cut in cuts:
     # --- клиенты, мульти, концентрация
     cl = collections.defaultdict(lambda: {'mrr': 0.0, 'prods': set(), 'n': 0, 'subs': []})
     for b in base:
-        c = cl[b['partner_id']]; c['mrr'] += b['mrr']; c['prods'].add(b['prod']); c['n'] += 1; c['subs'].append(b); c['name'] = b['pname']
+        c = cl[b['partner_id']]; c['mrr'] += b['mrr']; c['prods'].add(FAMP.get(b['prod'], b['prod'])); c['n'] += 1 if b['prod'] not in ADD else 0; c['subs'].append(b); c['name'] = b['pname']   # допродукты — в линейке SFA, в счёт подписок не идут
     seg = {s: [sum(1 for c in cl.values() if f(c)), sum(c['mrr'] for c in cl.values() if f(c))] for s, f in
            (('Только SFA', lambda c: c['prods'] == {F}), ('Только POS', lambda c: c['prods'] == {PP}), ('Оба продукта', lambda c: len(c['prods']) == 2))}
     add('clients', 'clients', 'Клиентов всего', len(cl), 'n', 'up'); add('clients', 'cl_sfa', 'Только SFA', seg['Только SFA'][0], 'n', 'up', F); add('clients', 'cl_pos', 'Только POS', seg['Только POS'][0], 'n', 'up', PP)
     add('clients', 'cl_both', 'Оба продукта', seg['Оба продукта'][0], 'n', 'up'); add('clients', 'arpc', 'Средний MRR на клиента', tm / len(cl), 'm', 'up')
-    sp = const['SPLIT']; add('clients', 'paused_n', 'Подписок на паузе', sp[PP]['4_paused'][0] + sp[F]['4_paused'][0], 'n', 'down'); add('clients', 'paused_mrr', 'MRR на паузе', sp[PP]['4_paused'][1] + sp[F]['4_paused'][1], 'm', 'down')
+    sp = const['SPLIT']; add('clients', 'paused_n', 'Подписок на паузе', sum(sp[p]['4_paused'][0] for p in ALLP if p in sp), 'n', 'down'); add('clients', 'paused_mrr', 'MRR на паузе', sum(sp[p]['4_paused'][1] for p in ALLP if p in sp), 'm', 'down')
     add('clients', 'lic_sfa', 'Лицензий SFA', R['LIC'][F], 'n', 'up', F); add('clients', 'lic_pos', 'Лицензий POS', R['LIC'][PP], 'n', 'up', PP)
+    for p in ADD:
+        if p in R['MRR']: add('clients', 'lic_' + p.lower(), 'Лицензий ' + PN[p], R['LIC'].get(p, 0), 'n', 'up', p)
     for s, v in seg.items(): ser('seg_clients', s, 'Клиентов', v[0]); ser('seg_mrr', s, 'MRR', v[1])
     jout = sum((const.get('MRR_JOUT') or {}).values())
     if abs(jout) > 1: ser('seg_mrr', 'Расхождения журнала Odoo', 'MRR', jout)
@@ -213,7 +225,8 @@ for cut in cuts:
                 else: ser('pl_tab', lab, ml(mm), v); tot_n += v
             ser('pl_tab', lab, 'Итого', (tot_n / tot_d if tot_d else None) if pct else tot_n)
         PLd = FN['PL']
-        pl_row('Подписки SFA', lambda mm: rkx('Подписки SFA', mm)); pl_row('Подписки POS', lambda mm: rkx('Подписки POS', mm)); pl_row('Разовые работы и прочее', lambda mm: rkx('Разовые работы и прочее', mm))
+        for k_ in REVK:
+            if k_ in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее') or any(kk.startswith(k_ + '|') for kk in RECx): pl_row(k_, lambda mm, k_=k_: rkx(k_, mm))
         pl_row('ВЫРУЧКА', lambda mm: PLd[mm]['rev'])
         pl_row('ФОТ поддержки, внедрения, ключевых клиентов', lambda mm: FN['COGS_FOT'][mm]); pl_row('Хостинг и инфраструктура', lambda mm: FN['HOST'][mm])
         pl_row('СЕБЕСТОИМОСТЬ', lambda mm: PLd[mm]['cogs']); pl_row('ВАЛОВАЯ ПРИБЫЛЬ', lambda mm: PLd[mm]['gp'])
@@ -255,7 +268,7 @@ for cut in cuts:
                 add('fin_cash', 'f_loans_m', 'Займы получены за месяц', cm['lt'], 'm', ''); add('fin_cash', 'f_debt', 'Долг по займам на конец месяца', cm['debt'], 'm', 'down')
                 add('fin_cash', 'f_loans_cum', 'Займы с апреля, нетто', sum(CSx[mm]['lt'] - CSx[mm]['lp'] for mm in MSx), 'm', '')
         for mm in FN['MR']:
-            ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Признано', sum(RECx.get('%s|%s' % (k, mm), 0) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')))
+            ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Признано', sum(RECx.get('%s|%s' % (k, mm), 0) for k in REVK))
             ser('rev_lines', ml(mm), 'Выставлено', FN['INV'][mm]); ser('rev_lines', ml(mm), 'Получено', FN['IN'][mm])
             ser('rev_def', ml(mm), 'Оплачено вперёд', FN['DEF'][mm])
             ser('rev_sfa', ml(mm), 'Признано SFA', rkx('Подписки SFA', mm))
@@ -285,7 +298,7 @@ for cut in cuts:
                 ser('src_tab', row[0], 'Источник', row[1]); ser('src_tab', row[0], 'Учёт выручки', row[2]); ser('src_tab', row[0], 'Как посчитано', row[3])
             for x in FN.get('CHK', []):
                 for col, k2 in (('Источник А', 'a_lab'), ('Сумма А', 'a'), ('Источник Б', 'b_lab'), ('Сумма Б', 'b'), ('Разница', 'diff'), ('Что взято и почему', 'note')): ser('src_check', x['what'], col, x[k2])
-        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rkx(k, m) for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее')), 'm', 'up')
+        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rkx(k, m) for k in REVK), 'm', 'up')
         add('fin_rev', 'f_inv', 'Выставлено за месяц', FN['INV'][m], 'm', 'up'); add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
         add('fin_rev', 'f_def', 'Оплачено вперёд за будущие месяцы', FN['DEF'][m], 'm', '')
         add('fin_rev', 'f_ar', 'Неоплаченные счета (дебиторка)', sum(FN['AR'].values()), 'm', 'down'); add('fin_rev', 'f_ar90', 'из них просрочены больше 90 дней', FN['AR']['91–180 дней'] + FN['AR']['больше 180 дней'], 'm', 'down')

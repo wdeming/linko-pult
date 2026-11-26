@@ -2,14 +2,15 @@
 """MRR и когортное удержание — в формате исходного файла (4 листа на формулах)."""
 import json, copy, collections, openpyxl
 from cfg_cut import *
+from cls import PRODS, PNAME
 TPL = '_шаблоны_форматов/tpl_mrr.xlsx'
 d = json.load(open(J('mrr'))); c = json.load(open(J('const')))
 ET = ('0_creation', '1_expansion', '15_contraction', '2_churn')
 mov = collections.defaultdict(float)
 for r in d['moves']: mov[(r['prod'], r['m'], r['et'])] += r['amt']
 mrr_end = c['MRR']
-net = {p: sum(mov[(p, m, e)] for m in MON for e in ET) for p in ('POS', 'SFA')}
-mrr_start = {p: mrr_end[p] - net[p] for p in ('POS', 'SFA')}
+net = {p: sum(mov[(p, m, e)] for m in MON for e in ET) for p in PRODS}
+mrr_start = {p: mrr_end.get(p, 0.0) - net[p] for p in PRODS}
 sp = lambda v: f"{v:,.0f}".replace(',', ' ')
 NOTE = ('Источник: Odoo, sale.order.log (движение MRR) и sale.order (факт по подпискам). Срез %s, выгрузка %s. '
         'Валютные подписки пересчитаны по курсу 12 000 сум/$ (управленческий курс).' % (CUT_RU, EXPORT_RU))
@@ -38,19 +39,20 @@ ws = wb['MRR по продуктам']
 s_sec, s_m, s_tot, s_co, s_note = styles(ws, 4), styles(ws, 5), styles(ws, 12), styles(ws, 24), styles(ws, 26)
 wipe(ws, 4)
 r = 4; tot_rows = {}
-for prod in ('POS', 'SFA'):
-    put(ws, r, ['ПРОДУКТ ' + prod], s_sec); r += 1; f0 = r
+for prod in ('POS', 'SFA', 'AI', 'PS'):
+    put(ws, r, ['ПРОДУКТ ' + PNAME[prod]], s_sec); r += 1; f0 = r
     for i, m in enumerate(MON):
         put(ws, r, ['%s 2026' % RUS[m], mrr_start[prod] if i == 0 else '=H%d' % (r - 1),
                     mov[(prod, m, '0_creation')], mov[(prod, m, '1_expansion')], mov[(prod, m, '15_contraction')], mov[(prod, m, '2_churn')],
-                    '=C%d+D%d+E%d+F%d' % (r, r, r, r), '=B%d+G%d' % (r, r), '=G%d/B%d' % (r, r)], s_m); r += 1
+                    '=C%d+D%d+E%d+F%d' % (r, r, r, r), '=B%d+G%d' % (r, r), '=IF(B%d<>0,G%d/B%d,"")' % (r, r, r)], s_m); r += 1
     l0 = r - 1
-    put(ws, r, ['ИТОГО %s, %s 2026' % (prod, PERIOD), '=B%d' % f0] + ['=SUM(%s%d:%s%d)' % (k, f0, k, l0) for k in 'CDEFG']
-        + ['=H%d' % l0, '=G%d/B%d' % (r, r)], s_tot); tot_rows[prod] = r; r += 2
-put(ws, r, ['ИТОГО КОМПАНИЯ, MRR на %s' % CUT_RU, None, None, None, None, None, None, '=H%d+H%d' % (tot_rows['POS'], tot_rows['SFA'])], s_co); r += 2
+    put(ws, r, ['ИТОГО %s, %s 2026' % (PNAME[prod], PERIOD), '=B%d' % f0] + ['=SUM(%s%d:%s%d)' % (k, f0, k, l0) for k in 'CDEFG']
+        + ['=H%d' % l0, '=IF(B%d<>0,G%d/B%d,"")' % (r, r, r)], s_tot); tot_rows[prod] = r; r += 2
+put(ws, r, ['ИТОГО КОМПАНИЯ, MRR на %s' % CUT_RU, None, None, None, None, None, None, '=' + '+'.join('H%d' % v for v in tot_rows.values())], s_co); r += 2
 notes(ws, r, [NOTE,
   'Период — с февраля 2026. Январь исключён: в нём в Odoo переносили действующую базу (у SFA 318 записей на 431 млн одним месяцем), это не продажи и не движение MRR.',
-  '«MRR на конец» месяца — нарастающий итог журнала изменений MRR в Odoo (sale.order.log: создания, расширения, сокращения, отток) по последний день месяца, как график «Изменение MRR» в Odoo; USD по 12 000. «MRR на начало» февраля — тот же итог на 31.01.2026: POS %s, SFA %s.' % (sp(mrr_start['POS']), sp(mrr_start['SFA'])),
+  '«MRR на конец» месяца — нарастающий итог журнала изменений MRR в Odoo (sale.order.log: создания, расширения, сокращения, отток) по последний день месяца, как график «Изменение MRR» в Odoo; USD по 12 000. «MRR на начало» февраля — тот же итог на 31.01.2026: POS %s, SFA %s, AI ассистент %s, Perfect store %s.' % (sp(mrr_start['POS']), sp(mrr_start['SFA']), sp(mrr_start['AI']), sp(mrr_start['PS'])),
+  'Продукт — по полю «Тип подписки» (с 26.11.2026): основная SFA, основная POS, AI ассистент, Perfect store. AI ассистент и Perfect store — отдельные подписки на сервере SFA; до 26.11.2026 они были строками подписок SFA и перенесены в отдельные подписки вместе с журналом MRR.',
   '«Сокращения» и «Расширения» — изменения суммы действующих подписок (downgrade/upgrade), «Отток» — закрытие подписки целиком.',
   HEAL], s_note)
 # ================= лист 2 =================
@@ -58,13 +60,13 @@ ws = wb['GRR и NRR помесячно']
 s_sec, s_m, s_note = styles(ws, 4), styles(ws, 5), styles(ws, 22)
 wipe(ws, 4)
 r = 4; GN = {}
-for prod in ('POS', 'SFA'):
-    put(ws, r, ['ПРОДУКТ ' + prod], s_sec); r += 1; run = mrr_start[prod]
+for prod in ('POS', 'SFA', 'AI', 'PS'):
+    put(ws, r, ['ПРОДУКТ ' + PNAME[prod]], s_sec); r += 1; run = mrr_start[prod]
     for m in MON:
         ch, co, ex = mov[(prod, m, '2_churn')], mov[(prod, m, '15_contraction')], mov[(prod, m, '1_expansion')]
         put(ws, r, ['%s 2026' % RUS[m], run, ch, co, ex, '=B%d+C%d+D%d' % (r, r, r), '=IF(B%d>0,F%d/B%d,"")' % (r, r, r),
                     '=F%d+E%d' % (r, r), '=IF(B%d>0,H%d/B%d,"")' % (r, r, r)], s_m)
-        GN[(prod, m)] = {'start': run, 'grr': (run + ch + co) / run, 'nrr': (run + ch + co + ex) / run}
+        if run > 0: GN[(prod, m)] = {'start': run, 'grr': (run + ch + co) / run, 'nrr': (run + ch + co + ex) / run}
         run += sum(mov[(prod, m, e)] for e in ET); r += 1
     r += 1
 notes(ws, r, [NOTE,
@@ -136,4 +138,4 @@ wb.save(fn)
 json.dump({'start': mrr_start, 'end': mrr_end, 'mov': {'%s|%s|%s' % k: v for k, v in mov.items()}, 'GN': {'%s|%s' % k: v for k, v in GN.items()},
            'COHQ': COHQ, 'coh': {'%s|%s' % k: dict(v, init=cev[k].get('0_creation', 0), now=fact[k]) for k, v in coh.items()}}, open(J('res_mrr'), 'w'), ensure_ascii=False)
 print(fn)
-for p in ('POS', 'SFA'): print(p, 'старт', sp(mrr_start[p]), 'net', sp(net[p]), 'конец', sp(mrr_end[p]))
+for p in PRODS: print(p, 'старт', sp(mrr_start[p]), 'net', sp(net[p]), 'конец', sp(mrr_end[p]))

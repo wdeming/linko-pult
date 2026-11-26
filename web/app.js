@@ -76,8 +76,8 @@
   function tile(r, M, prevCut) {
     const t = el('div', 'pl-tile ' + tone(r)), l = el('div', 'pl-tl');
     const tot = /, всего$/.test(r.label);
-    l.append(el('span', '', r.prod ? r.label.replace(/, (SFA|POS)$/, '') : r.label.replace(/, всего$/, '')));
-    if (r.prod) l.append(el('span', 'pl-chip ' + r.prod.toLowerCase(), r.prod));
+    l.append(el('span', '', r.prod ? r.label.replace(/, (SFA|POS|AI ассистент|Perfect store)$/, '') : r.label.replace(/, всего$/, '')));
+    if (r.prod) l.append(el('span', 'pl-chip ' + r.prod.toLowerCase(), PNAME[r.prod] || r.prod));
     else if (tot) l.append(el('span', 'pl-chip all', 'ВСЕГО'));
     const row = el('div', 'pl-tr');
     row.append(el('span', 'pl-d ' + tone(r), fmtD(r) + (prevCut && r.delta != null ? ' к ' + prevCut : '')), spark(M.filter((x) => x.key === r.key), r.cut));
@@ -208,6 +208,7 @@
   const RMG = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   const dayRu = (s) => (+s.slice(8, 10)) + ' ' + RMG[+s.slice(5, 7) - 1];
   const sgn = (v, k) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v), k);
+  const PNAME = {AI: 'AI ассистент', PS: 'Perfect store'};   // допродукты SFA — отдельные подписки (поле «Тип подписки»)
   function ttile(label, value, kind, delta, deltaKind, note, good, chip) {
     const t = el('div', 'pl-tile'), l = el('div', 'pl-tl');
     l.append(el('span', '', label)); if (chip) l.append(el('span', 'pl-chip ' + (chip === 'ВСЕГО' ? 'all' : chip.toLowerCase()), chip));
@@ -227,7 +228,8 @@
   const netTile = (t, v) => { if (v > 0) t.classList.add('good', 'pl-up'); else if (v < 0) t.classList.add('bad', 'pl-down'); return t; };
   dash.draw('today-tiles', (e) => {
     const g = dash.data('today'); if (g.status !== 'ok' || !g.data.mrr) { e.replaceChildren(); return; }
-    const d = g.data, P = ['SFA', 'POS'], s = (o) => P.reduce((a, p) => a + (o && o[p] || 0), 0);
+    const d = g.data, P = ['SFA', 'POS', 'AI', 'PS'], s = (o) => P.reduce((a, p) => a + (o && o[p] || 0), 0);
+    const ad = (o) => (o && o.AI || 0) + (o && o.PS || 0);
     const pe = 'к ' + d.prev_end.slice(8, 10) + '.' + d.prev_end.slice(5, 7), lc = d.last_cut ? 'к срезу ' + d.last_cut.slice(8, 10) + '.' + d.last_cut.slice(5, 7) : '';
     const mv = (et) => s(d.mov[et] || {}), net = mv('0_creation') + mv('1_expansion') + mv('15_contraction') + mv('2_churn');
     const ch = (a, b) => ({v: a - b, pct: b ? a / b - 1 : null});
@@ -237,7 +239,8 @@
       ttile('MRR', s(d.mrr), 'm', Object.assign(ch(s(d.mrr), s(d.mrr_prev)), {text: pe}), 'm', null, 'up', 'ВСЕГО'),
       ttile('MRR', d.mrr.SFA, 'm', Object.assign(ch(d.mrr.SFA, d.mrr_prev.SFA), {text: pe}), 'm', null, 'up', 'SFA'),
       ttile('MRR', d.mrr.POS, 'm', Object.assign(ch(d.mrr.POS, d.mrr_prev.POS), {text: pe}), 'm', null, 'up', 'POS'),
-      ttile('Подписок в базе', subsNow, 'n', d.last_subs != null ? Object.assign(ch(subsNow, d.last_subs), {text: lc}) : null, 'n', 'SFA ' + d.subs.SFA + ' · POS ' + d.subs.POS, 'up'),
+      ttile('MRR допродуктов SFA', ad(d.mrr), 'm', Object.assign(ch(ad(d.mrr), ad(d.mrr_prev)), {text: pe}), 'm', 'AI ассистент ' + fmt(d.mrr.AI || 0, 'm') + ' · Perfect store ' + fmt(d.mrr.PS || 0, 'm'), 'up', 'AI · PS'),
+      ttile('Подписок в базе', subsNow, 'n', d.last_subs != null ? Object.assign(ch(subsNow, d.last_subs), {text: lc}) : null, 'n', 'SFA ' + d.subs.SFA + ' · POS ' + d.subs.POS + ' · AI ' + (d.subs.AI || 0) + ' · PS ' + (d.subs.PS || 0), 'up'),
       netTile(ttile('Изменение MRR с 1-го числа', sgn(net, 'm'), 'm', null, 'm', 'новые ' + sgn(mv('0_creation'), 'm') + ' · расширения ' + sgn(mv('1_expansion'), 'm') + ' · сокращения ' + sgn(mv('15_contraction'), 'm') + ' · отток ' + sgn(mv('2_churn'), 'm'), 'up'), net),
       ttile('Поступило денег с 1-го числа', d.cash_in, 'm', Object.assign(ch(d.cash_in, d.cash_in_prev), {text: 'к ' + ps}), 'm', 'комиссии Payme / Click / Paynet ' + fmt(d.cash_comm, 'm'), 'up'));
   });

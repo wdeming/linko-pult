@@ -4,6 +4,7 @@ import json, collections
 import openpyxl
 from style_lib import *
 from cfg_cut import *
+from cls import PNAME
 
 d = json.load(open(J('multi')))
 multi, T = d['multi'], d['totals']
@@ -75,10 +76,10 @@ header(ws, 3, ['№','Клиент','Тип','Подписок','POS','SFA','Д�
 r = 4
 for i, p in enumerate(multi, 1):
     isboth = bool(p['pos'] and p['sfa'])
-    nums = ", ".join("%s (%s%s)" % (s['name'], s['prod'], ', пауза' if s['st'] == 'На паузе' else '') for s in p['subs'])
+    nums = ", ".join("%s (%s%s)" % (s['name'], PNAME.get(s['prod'], s['prod']), ', пауза' if s['st'] == 'На паузе' else '') for s in p['subs'])
     datarow(ws, r, [i, p['name'], typ(p), p['pos'] + p['sfa'], p['pos'], p['sfa'],
-                    sum(1 for s in p['subs'] if s['st'] == 'В работе'),
-                    sum(1 for s in p['subs'] if s['st'] == 'На паузе'), p['mrr'], nums],
+                    sum(1 for s in p['subs'] if s['st'] == 'В работе' and s['prod'] in ('POS', 'SFA')),
+                    sum(1 for s in p['subs'] if s['st'] == 'На паузе' and s['prod'] in ('POS', 'SFA')), p['mrr'], nums],
             fill=(YELLOW if isboth else GREEN), fmts=[NUM, None, None, NUM, NUM, NUM, NUM, NUM, NUM, None], bold=isboth)
     r += 1
 totalrow(ws, r, [None,'ИТОГО',None,f"=SUM(D4:D{r-1})",f"=SUM(E4:E{r-1})",f"=SUM(F4:F{r-1})",
@@ -94,7 +95,7 @@ header(ws, 3, ['№','Клиент','Тип клиента','Подписка','
 r = 4; i = 1
 for p in multi:
     for s in p['subs']:
-        datarow(ws, r, [i, p['name'], typ(p), s['name'], s['prod'], s['st'], s['mrr']],
+        datarow(ws, r, [i, p['name'], typ(p), s['name'], PNAME.get(s['prod'], s['prod']), s['st'], s['mrr']],
                 fill=(BLUE if s['prod'] == 'POS' else GREEN), fmts=[NUM, None, None, None, None, None, NUM])
         r += 1; i += 1
 totalrow(ws, r, [None,'ИТОГО',None,None,None,None,f"=SUM(G4:G{r-1})"], fmts=[None,None,None,None,None,None,NUM])

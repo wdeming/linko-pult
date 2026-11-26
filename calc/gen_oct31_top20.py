@@ -4,6 +4,7 @@ import json, collections, datetime
 import openpyxl
 from style_lib import *
 from cfg_cut import *
+from cls import PNAME
 
 CUT = CUT_D
 NOTE = ("Источник: Odoo (odoo.linko.uz), sale.order — подписки в статусах «в работе» и «на паузе» "
@@ -68,7 +69,7 @@ header(ws, 3, ['№','Клиент','Продукт','Подписок','Лиц�
 r = 4; run = 0.0
 for i, c in enumerate(TOP, 1):
     subs = c['subs']; run += c['mrr']
-    prods = sorted({s['prod'] for s in subs})
+    prods = [PNAME[x] for x in ('SFA', 'POS', 'AI', 'PS') if x in {s['prod'] for s in subs}]
     ends = [datetime.date.fromisoformat(s['end_date']) for s in subs if s['end_date']]
     firsts = [s['first_contract'] for s in subs if s['first_contract']]
     emin = min(ends) if ends else None
@@ -82,7 +83,7 @@ for i, c in enumerate(TOP, 1):
     elif days is not None and days <= 60:
         fill = PatternFill('solid', fgColor='FFFFF2CC')
     else:
-        fill = GREEN if prods == ['SFA'] else BLUE
+        fill = BLUE if 'POS' in prods else GREEN
     datarow(ws, r, [i, c['name'], "/".join(prods), len(subs), sum(lic.get(s['id'], 0) for s in subs),
                     c['mrr'], f"=F{r}/{TOTAL_MRR:.0f}", run / TOTAL_MRR, plans,
                     min(firsts) if firsts else None, emin.isoformat() if emin else None, days, teams],
@@ -114,7 +115,7 @@ for c in TOP:
         paused = s['st'] == '4_paused'
         fill = PatternFill('solid', fgColor='FFF8CBAD') if (paused or (days is not None and days <= 14)) \
                else (BLUE if annual else GREEN)
-        datarow(ws, r, [i, c['name'], s['name'], s['prod'], m['plan'],
+        datarow(ws, r, [i, c['name'], s['name'], PNAME.get(s['prod'], s['prod']), m['plan'],
                         'На паузе' if paused else 'В работе', s['mrr'], lic.get(s['id'], 0),
                         s['first_contract'], end.isoformat() if end else None, days, s['next_invoice'], m['team']],
                 fill=fill, fmts=[NUM, None, None, None, None, None, NUM, NUM, None, None, NUM, None, None])

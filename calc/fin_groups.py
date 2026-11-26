@@ -20,4 +20,4 @@ for g, cats in ((G_STAFF, ['Оклад', 'KPI', 'Бонусы', 'Бонусы р
                 (CAPEX, ['Техника и мебель']), (TAP, ['Финансирование Tap'])):
     for c in cats: CAT[c] = g
 group = lambda cat: CAT.get(cat, G_OTH)
-REV = ['Подписки SFA', 'Подписки POS', 'Разовые работы и прочее']
+REV = ['Подписки SFA', 'Подписки POS', 'Подписки AI ассистент', 'Подписки Perfect store', 'Разовые работы и прочее']   # AI ассистент и Perfect store — подписки с 26.11.2026

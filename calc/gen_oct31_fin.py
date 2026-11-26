@@ -7,6 +7,7 @@ from openpyxl.utils import get_column_letter as L
 from openpyxl.styles import Font
 from style_lib import *
 from cfg_cut import *
+from cls import PRODS, FAM
 K = 12000; D = datetime.date.fromisoformat
 F = json.load(open(J('fin'), encoding='utf-8')); CASH = json.load(open(J('cash'), encoding='utf-8')); EXP = json.load(open(J('exp'), encoding='utf-8'))
 COST = json.load(open(J('cost'), encoding='utf-8'))
@@ -29,7 +30,8 @@ MR = MON                                            # выручка — с фе
 RU = lambda m: '%s %s' % (RUS[m][:3].lower() if len(RUS[m]) > 4 else RUS[m].lower(), m[2:4])
 # ---------- выручка: выставлено и признано ----------
 SFA_P, POS_P = {25, 26, 41, 42}, {24, 40, 43, 32}
-kind = lambda pid: 'Подписки SFA' if pid in SFA_P else 'Подписки POS' if pid in POS_P else 'Разовые работы и прочее'
+KINDS = ('Подписки SFA', 'Подписки POS', 'Подписки AI ассистент', 'Подписки Perfect store', 'Разовые работы и прочее')   # с 26.11.2026 AI ассистент (44) и Perfect store (35) — подписки
+kind = lambda pid: 'Подписки SFA' if pid in SFA_P else 'Подписки POS' if pid in POS_P else 'Подписки AI ассистент' if pid == 44 else 'Подписки Perfect store' if pid == 35 else 'Разовые работы и прочее'
 INV = collections.defaultdict(float); REC = collections.defaultdict(float); INVK = collections.defaultdict(float); DEF = collections.defaultdict(float)
 LATE_IN = collections.defaultdict(float); LATE_OUT = collections.defaultdict(float)   # для мостика «по периодам услуги» → «как в Odoo»
 for x in F['inv']:
@@ -43,14 +45,14 @@ for x in F['inv']:
             if x['d'] <= CUT: LATE_IN[dm] += v              # счёт месяца dm за прошлый период
     for m in MR:      # отложенная выручка на конец месяца: выставлено до конца месяца, а признаётся позже
         if dm <= m: DEF[m] += sum(v for mm, v in sp.items() if mm > m)
-recm = lambda m: sum(REC[(k, m)] for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее'))
+recm = lambda m: sum(REC[(k, m)] for k in KINDS)
 # ---------- MRR на конец месяца по журналу (POS + SFA) ----------
 SUBS = F['subs']; LOG = F['log']
 cum_sub = collections.defaultdict(lambda: collections.defaultdict(float))   # подписка -> месяц -> движение
 for r in LOG: cum_sub[r['o']][r['m']] += r['a']
 def mrr_at(o, m):   # MRR подписки на конец месяца m
     return sum(v for mm, v in cum_sub[o].items() if mm <= m)
-MRR_END = {m: sum(mrr_at(o, m) for o in cum_sub if SUBS.get(str(o), {}).get('prod') in ('POS', 'SFA')) for m in MR}
+MRR_END = {m: sum(mrr_at(o, m) for o in cum_sub if SUBS.get(str(o), {}).get('prod') in PRODS) for m in MR}   # все продукты: SFA, POS, AI ассистент, Perfect store
 # ---------- поступления, комиссии ----------
 IN = collections.defaultdict(float); COM = collections.defaultdict(float)
 for x in CASH:
@@ -91,9 +93,9 @@ prev = lambda m: MON[MON.index(m) - 1] if MON.index(m) > 0 else '2026-01'
 # ---------- сегменты по лицензиям ----------
 CL = collections.defaultdict(lambda: {'lic': 0.0, 'kas': 0.0, 'sfa': False, 'subs': []})
 for o, s in SUBS.items():
-    if s['prod'] not in ('POS', 'SFA') or not s['p']: continue
+    if s['prod'] not in PRODS or not s['p']: continue      # допродукты AI ассистент / Perfect store — в MRR клиента линейки SFA
     c2 = CL[s['p']]; c2['subs'].append(int(o)); c2['lic'] += s['lic'] if s['prod'] == 'SFA' else 0; c2['kas'] += s['kas'] if s['prod'] == 'POS' else 0
-    c2['sfa'] = c2['sfa'] or s['prod'] == 'SFA'
+    c2['sfa'] = c2['sfa'] or FAM.get(s['prod']) == 'SFA'
 def seg(c2):
     if c2['sfa']:
         l = c2['lic']
@@ -133,12 +135,12 @@ for x in F['ar']:
     AR[b] += x['res']; ARN[b] += 1
 # ---------- NRR / GRR за весь доступный период: с 31.01.2026 (база подписок загружена в журнал MRR в январе) ----------
 MLIST = ['2026-01'] + [m for m in MON if m <= LAST_M]; KY = 12 / NMON if NMON else None
-MRR_END['2026-01'] = sum(mrr_at(o, '2026-01') for o in cum_sub if SUBS.get(str(o), {}).get('prod') in ('POS', 'SFA'))
+MRR_END['2026-01'] = sum(mrr_at(o, '2026-01') for o in cum_sub if SUBS.get(str(o), {}).get('prod') in PRODS)
 RET = {}
 for lab, pf in (('Всего', None), ('SFA', 'SFA'), ('POS', 'POS')):
     cp = collections.defaultdict(list)
     for o, s2 in SUBS.items():
-        if s2['prod'] in ('POS', 'SFA') and s2['p'] and (pf is None or s2['prod'] == pf): cp[s2['p']].append(int(o))
+        if s2['prod'] in PRODS and s2['p'] and (pf is None or FAM.get(s2['prod']) == pf): cp[s2['p']].append(int(o))   # SFA — с допродуктами клиента
     base0 = {p: v for p, v in ((p, sum(mrr_at(o, M0) for o in ss)) for p, ss in cp.items()) if v > 0}; s0 = sum(base0.values())
     curve = []
     for m in MLIST:
@@ -151,7 +153,7 @@ for lab, pf in (('Всего', None), ('SFA', 'SFA'), ('POS', 'POS')):
 SPL = {m: collections.defaultdict(float) for m in MLIST[1:]}
 EV = collections.defaultdict(list); ORD = {'15_contraction': 0, '1_expansion': 1, '2_churn': 2, '0_creation': 3}
 for r in LOG:
-    if MLIST[1] <= r['m'] <= LAST_M and SUBS.get(str(r['o']), {}).get('prod') in ('POS', 'SFA'): EV[r['o']].append((r['m'], ORD.get(r['et'], 9), r['et'], r['a']))
+    if MLIST[1] <= r['m'] <= LAST_M and SUBS.get(str(r['o']), {}).get('prod') in PRODS: EV[r['o']].append((r['m'], ORD.get(r['et'], 9), r['et'], r['a']))
 for o, evs in EV.items():
     lots = []
     for m, _, et, a in sorted(evs):
@@ -194,8 +196,8 @@ def line(lab, vals, key=None, total=True, fmt=NUM, bold=False, fill=None):
     r += 1
 def frm(expr): return ['=' + expr.replace('#', L(cc)) for cc in range(2, 2 + n)]
 section(ws, 'A%d' % r, 'ВЫРУЧКА (признанная — по периоду услуги)'); r += 1
-for k in ('Подписки SFA', 'Подписки POS', 'Разовые работы и прочее'): line('    ' + k, [round(REC[(k, m)]) for m in MS], k)
-line('ИТОГО ВЫРУЧКА', frm('#%d+#%d+#%d' % (ROW['Подписки SFA'], ROW['Подписки POS'], ROW['Разовые работы и прочее'])), 'rev', bold=True)
+for k in KINDS: line('    ' + k, [round(REC[(k, m)]) for m in MS], k)
+line('ИТОГО ВЫРУЧКА', frm('+'.join('#%d' % ROW[k] for k in KINDS)), 'rev', bold=True)
 section(ws, 'A%d' % r, 'СЕБЕСТОИМОСТЬ'); r += 1
 line('    ФОТ поддержки, внедрения и ключевых клиентов', [round(COGS_FOT[m]) for m in MS], 'cfot')
 line('    Хостинг и инфраструктура', [round(HOST[m]) for m in MS], 'chost')

@@ -3,7 +3,7 @@
 выживаемость, константы карточки, хостинг, штат отделов себестоимости, затраты на привлечение, каналы."""
 import json, collections, datetime as dt, re
 from odoo_db import OdooDB
-from cls import PROD_SQL, MRR_SQL, AMT_SQL
+from cls import PROD_SQL, MRR_SQL, AMT_SQL, PRODS, MAIN
 from cfg_cut import *
 db = OdooDB()
 def dump(name, obj): json.dump(obj, open(J(name), 'w'), ensure_ascii=False, default=str)
@@ -138,27 +138,27 @@ dump('survival', surv)
 
 # ───────── 5. константы карточки ─────────
 c = {}
-c['SRV'] = {p: sum(1 for b in base if b['prod'] == p) for p in ('POS', 'SFA')}
-c['MRR_SUBS'] = {p: sum(b['mrr'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}   # по подпискам (справочно)
+c['SRV'] = {p: sum(1 for b in base if b['prod'] == p) for p in PRODS}
+c['MRR_SUBS'] = {p: sum(b['mrr'] for b in base if b['prod'] == p) for p in PRODS}   # по подпискам (справочно)
 # MRR на срез = нарастающий итог журнала изменений MRR (sale.order.log) по дату среза — как график «Изменение MRR» в Odoo
 _lj = {r['prod']: float(r['s']) for r in db.query(f"""select {PROD_SQL} prod, sum(case when l.currency_id=1 then l.amount_signed*12000 else l.amount_signed end) s
    from sale_order_log l join sale_order so on so.id=l.order_id where l.event_date <= date '{CUT}' group by 1""")}
-c['MRR'] = {p: _lj.get(p, 0.0) for p in ('POS', 'SFA')}
-c['MRR_SUBS'] = {p: sum(b['mrr_sub'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}   # по самим подпискам (справочно)
-c['MRR_JOUT'] = {p: c['MRR'][p] - sum(b['mrr'] for b in base if b['prod'] == p) for p in ('POS', 'SFA')}   # журнал подписок вне базы (ошибки журнала)
+c['MRR'] = {p: _lj.get(p, 0.0) for p in PRODS}
+c['MRR_SUBS'] = {p: sum(b['mrr_sub'] for b in base if b['prod'] == p) for p in PRODS}   # по самим подпискам (справочно)
+c['MRR_JOUT'] = {p: c['MRR'][p] - sum(b['mrr'] for b in base if b['prod'] == p) for p in PRODS}   # журнал подписок вне базы (ошибки журнала)
 c['JERR'] = JERR
 c['SPLIT'] = {p: {s: [sum(1 for b in base if b['prod']==p and b['st']==s), sum(b['mrr'] for b in base if b['prod']==p and b['st']==s)]
-                  for s in ('3_progress','4_paused')} for p in ('POS','SFA')}
+                  for s in ('3_progress','4_paused')} for p in PRODS}
 bp = {b['id']: b['prod'] for b in base}
-REC = {24, 40, 43, 25, 26, 41, 42, 35, 32}
+REC = {24, 40, 43, 25, 26, 41, 42, 35, 32, 44}   # лицензии: POS, SFA, Perfect store (35), AI ассистент (44)
 lic = collections.defaultdict(float)
 for l in lines:
     if l['pid'] in REC: lic[bp[l['oid']]] += l['qty']
 c['LIC'] = dict(lic)
 c['NEW'] = {r['prod']: r['n'] for r in db.query(f"""select {PROD_SQL} prod, count(*) n from sale_order_log l join sale_order so on so.id=l.order_id
  where l.event_type='0_creation' and l.event_date>=date '{P1}' and l.event_date<date '{P2}' group by 1""")}
-c['NEW_COH'] = {p: sum(r['n'] for r in out['cohorts'] if r['prod'] == p) for p in ('POS', 'SFA')}
-ONE = {'POS': (30, 39), 'SFA': (33, 37, 35, 36, 38, 44)}
+c['NEW_COH'] = {p: sum(r['n'] for r in out['cohorts'] if r['prod'] == p) for p in PRODS}
+ONE = {'POS': (30, 39), 'SFA': (33, 37, 36, 38)}   # разовые; Perfect store (35) и AI ассистент (44) с 26.11.2026 — подписки (MRR), не разовая
 allone = list(ONE['POS']) + list(ONE['SFA'])
 om = {p: {m: 0.0 for m in MON} for p in ONE}; byp = collections.defaultdict(float)
 for r in db.query(f"""select to_char(aml.date,'YYYY-MM') m, aml.product_id pid,
@@ -182,7 +182,7 @@ c['DEP_ALL'] = dep
 ch = collections.defaultdict(int)
 for r in out['events_n']:
     if r['et'] == '2_churn': ch[(r['prod'], r['m'])] = r['n']
-c['CHURN_N'] = {p: {m: ch[(p, m)] for m in MON} for p in ('POS', 'SFA')}
+c['CHURN_N'] = {p: {m: ch[(p, m)] for m in MON} for p in PRODS}
 def cycles(rw):
     """Срок жизни по когортной кривой: наблюдаемые месяцы + хвост по среднему темпу убыли последних трёх месяцев."""
     obs = sum(r[3] for r in rw[1:]); last = rw[-1][3]
@@ -227,7 +227,7 @@ dump('const', c)
 for k in ('SRV', 'LIC', 'MRR', 'NEW', 'NEW_COH', 'ONCE', 'CYC_COH', 'POOLS'): print(k, c[k])
 print('DEP', {k: f'{v:,.0f}' for k, v in c['DEP'].items()})
 print('survival', {p: [f"{x[0]}:{x[3]*100:.0f}%" for x in surv[p]] for p in surv})
-tot = {p: 0.0 for p in ('POS', 'SFA')}
+tot = {p: 0.0 for p in PRODS}
 for r in out['moves']:
     if r['prod'] in tot: tot[r['prod']] += r['amt']
 print('MRR0 (обратным счётом):', {p: int(c['MRR'][p] - tot[p]) for p in tot})

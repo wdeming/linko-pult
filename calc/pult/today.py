@@ -32,7 +32,7 @@ INV = f"""select coalesce(sum(case when c.name='UZS' then aml.price_subtotal els
   where aml.parent_state='posted' and am.move_type in ('out_invoice','out_refund') and aml.display_type='product' and aml.date >= date '%s' and aml.date <= date '%s'"""
 inv = float(q(INV % (m0, today))[0]['s']); inv_p = float(q(INV % (p0, p_same))[0]['s'])
 db.close()
-P = ('SFA', 'POS')
+P = ('SFA', 'POS', 'AI', 'PS')   # продукт — по полю «Тип подписки»: основные SFA / POS, допродукты AI ассистент и Perfect store
 print(json.dumps({'today': str(today), 'month_start': str(m0), 'prev_end': str(prev_end), 'prev_same': str(p_same),
   'mrr': {p: mrr_now.get(p, 0) for p in P}, 'mrr_prev': {p: mrr_prev.get(p, 0) for p in P},
   'mov': {et: {p: v.get(p, 0) for p in P} for et, v in mov.items()},

@@ -18,6 +18,7 @@ ORDER = [(ws.cell(r, 1).value, ws.cell(r, 2).value, ws.cell(r, 3).value) for r i
 ORDER.append(('Причина не указана', 'Причина не указана', 'Нет данных'))
 agg = collections.defaultdict(lambda: [0, 0.0]); partners = {'POS': set(), 'SFA': set()}
 for r in d['closed']:
+    if r['prod'] not in partners: continue      # отток — только основные подписки POS / SFA; допродукты (AI ассистент, Perfect store) не входят
     nm = NAME[r['cr']]
     agg[(nm, r['prod'])][0] += r['n']; agg[(nm, r['prod'])][1] += r['m']; partners[r['prod']].update(r['partners'])
 assert all(k[0] in [o[0] for o in ORDER] for k in agg)

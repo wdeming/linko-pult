@@ -269,3 +269,5 @@ body[data-mode="fin"] .pl-cutbar{background:linear-gradient(135deg,color-mix(in 
 .pl-method h3{font-size:15px;margin:18px 0 6px}
 .pl-method p,.pl-method li{margin:6px 0;color:var(--color-fg)}
 .pl-method ul{padding-left:20px}
+/* допродукты SFA (поле «Тип подписки», с 26.11.2026) */
+.pl-chip.ai,.pl-chip.ps{border-color:#7c5cdb;color:#7c5cdb;background:color-mix(in srgb,#7c5cdb 10%,transparent)}
