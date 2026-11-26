@@ -304,3 +304,23 @@ body[data-mode="goals"] #today,body[data-mode="goals"] #tabs,body[data-mode="goa
 .pl-soon p{margin:8px 0 10px;font-size:15px}.pl-soon ul{margin:0;padding-left:20px;color:var(--color-fg-muted);line-height:1.7}
 .pl-soonb{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:999px;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
 .pl-bank [data-mode="goals"],.pl-bank #goals-tabs,.pl-bank .pl-goal{display:none!important}
+/* Планы продаж (26.11.2026) */
+.sp-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px;padding:14px 16px;margin:6px 0 14px;border:1px solid var(--color-border-line);border-radius:14px;background:var(--color-panel)}
+.sp-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--color-fg-muted)}
+.sp-form input{font:inherit;font-size:14px;padding:6px 10px;border:1px solid var(--color-border-line);border-radius:var(--cds-radius);background:var(--color-panel);color:var(--color-fg);width:190px}
+.sp-ft{font-weight:700;font-size:13px;align-self:center;margin-right:4px}.sp-msg{font-size:12px;color:var(--color-fg-muted);align-self:center}
+.sp-tiles{margin-bottom:14px}
+.sp-tbl td{vertical-align:top}.sp-tbl th{text-align:left!important}.sp-c{text-align:left!important;min-width:120px}
+.sp-f{font-weight:700;font-size:14px}.sp-plan{font-size:11.5px;color:var(--color-fg-muted)}.sp-none{color:var(--color-fg-muted)}
+.sp-bar{height:4px;border-radius:9px;background:var(--color-border-line);margin-top:4px;overflow:hidden}.sp-bar i{display:block;height:100%}
+.sp-bar i.ok{background:var(--color-ok)}.sp-bar i.mid{background:#e3a43c}.sp-bar i.bad{background:var(--color-bad)}
+.sp-row{cursor:pointer}.sp-row:hover td{background:color-mix(in srgb,var(--accent) 5%,transparent)}.sp-sel td{background:color-mix(in srgb,var(--accent) 10%,transparent)!important}
+.sp-cur .sp-m{font-weight:700;color:var(--accent)}
+.sp-h{font:700 15px/1.3 var(--font-head);margin:18px 0 8px}
+.sp-grp td{font-weight:700;background:color-mix(in srgb,var(--color-fg) 5%,transparent);text-align:left!important}
+.sp-info td{color:var(--color-fg-muted);font-style:italic}
+.sp-dt td{white-space:normal}
+.sp-logbox{margin-top:10px;font-size:12px;color:var(--color-fg-muted)}.sp-logbox ul{margin:6px 0 0;padding-left:18px;line-height:1.6}
+.pl-ro .sp-form,.pl-ro #sp-refresh{display:none!important}
+.sp-dt td,.sp-dt th{text-align:left!important}.sp-dt td:nth-child(5),.sp-dt th:nth-child(5){text-align:right!important}
+.sp-grp td{white-space:normal}

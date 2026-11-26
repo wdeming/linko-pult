@@ -237,3 +237,5 @@ def api_history():
 init()
 import debts
 debts.install(app, db, now, CFG, CALC)
+import goals
+goals.install(app, db, now, CFG, CALC, role)

@@ -316,6 +316,7 @@
     document.querySelectorAll('.pl-tab').forEach((b) => { b.setAttribute('aria-current', b.dataset.tab === doc ? 'true' : 'false'); });
     if (link) dash.setLink(doc);
     if (doc === 'fin_plan' && !PLAN) loadPlan(false);
+    if (doc === 'goal_sales' && window.loadSales) window.loadSales(false);
   }
   // ---------- план поступлений (на сегодня, /api/plan) ----------
   let PLAN = null, planBusy = false;
