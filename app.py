@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Пульт Linko — веб-сервис: вход, данные срезов из своей базы (SQLite), пересборка из Odoo (только чтение), выдача Excel."""
 import os, sys, json, sqlite3, subprocess, threading, datetime, re, calendar, base64
+from uchet import walk as uchet_walk, xlsx as uchet_xlsx   # «Odoo» → «учётная система» во всём, что видит пользователь
 from urllib.parse import quote
 from flask import Flask, request, session, redirect, jsonify, send_from_directory, Response
 from werkzeug.security import check_password_hash
@@ -95,7 +96,7 @@ button{font:600 15px Inter,sans-serif;padding:11px;border:0;border-radius:11px;b
 p.e{margin:0;color:#d6336c;font-size:13px}
 @media (prefers-color-scheme:dark){body{color:#e7ecf6;background:radial-gradient(900px 500px at 15%% 0%%,#1c2a55,transparent 60%%),radial-gradient(800px 500px at 100%% 100%%,#0f3a33,transparent 60%%),#0b1220}
 form{background:#131c2e;border-color:#24314b}input{background:#0f1726;border-color:#24314b}.s{color:#93a1ba}}</style></head>
-<body><form method="post"><div class="m">L</div><h1>Пульт Linko</h1><p class="s">Данные Odoo, срезы и финансы</p><input name="login" placeholder="Логин" autocomplete="username" required><input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required><button>Войти</button>%s</form></body></html>"""
+<body><form method="post"><div class="m">L</div><h1>Пульт Linko</h1><p class="s">Данные учётной системы, срезы и финансы</p><input name="login" placeholder="Логин" autocomplete="username" required><input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required><button>Войти</button>%s</form></body></html>"""
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -115,7 +116,7 @@ def index():
     if role() == 'viewer': html = html.replace('<body>', '<body class="pl-ro">', 1)
     if role() == 'bank':
         html = html.replace('<body>', '<body class="pl-ro pl-bank">', 1)
-        for t in (' Дебиторка завышена: много поступлений в Odoo не привязано к счетам, поэтому оплаченные счета числятся неоплаченными.',
+        for t in (' Дебиторка завышена: много поступлений в учётной системе не привязано к счетам, поэтому оплаченные счета числятся неоплаченными.',
                   ', поэтому EBITDA 2025 лучше, чем в файле финансиста, ровно на эти суммы (строка «EBITDA в исходном файле»)'):
             html = html.replace(t, '' if t.startswith(' ') else '')
     return Response(html, mimetype='text/html', headers={'Cache-Control': 'no-store'})
@@ -137,8 +138,8 @@ def api_data():
     with db() as c: rows = c.execute('select * from cutdata order by cut').fetchall()
     M, S = [], []
     for r in rows: M += json.loads(r['metrics']); S += json.loads(r['series'])
-    if role() == 'bank': M, S = bank_rows(M, S); return jsonify(metrics=M, series=S, status=None, measured={r['cut']: r['measured_at'] for r in rows})
-    return jsonify(metrics=M, series=S, status=last_run(), measured={r['cut']: r['measured_at'] for r in rows})
+    if role() == 'bank': M, S = bank_rows(M, S)
+    return jsonify(metrics=uchet_walk(M), series=uchet_walk(S), status=None if role() == 'bank' else last_run(), measured={r['cut']: r['measured_at'] for r in rows})
 @app.route('/api/status')
 def api_status(): return jsonify(status=None if role() == 'bank' else last_run())
 @app.route('/api/file')
@@ -149,6 +150,7 @@ def api_file():
     if role() == 'bank':
         if request.args.get('doc', '') in BANK_FILES_BLOCK: return 'Нет доступа к этому файлу', 403
         body = bank_xlsx(request.args.get('doc', ''), body)
+    body = uchet_xlsx(body)
     return Response(body, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="linko_%s_%s.xlsx"; filename*=UTF-8\'\'%s' % (request.args.get('doc', ''), request.args.get('cut', ''), quote(f['name']))})
 @app.route('/api/refresh', methods=['POST'])
 def api_refresh():
@@ -176,8 +178,7 @@ TLOCK = threading.Lock()
 @app.route('/api/today')
 def api_today():
     import time
-    if role() == 'bank': return jsonify(error='Нет доступа'), 403
-    force = request.args.get('force') == '1' and role() not in RO
+    force = request.args.get('force') == '1' and role() not in RO      # банк видит «Сейчас в учётной системе», но без пересчёта
     with TLOCK:
         if force or not TODAY['data'] or time.time() - TODAY['at'] > 600:
             try:
@@ -185,7 +186,7 @@ def api_today():
                 if r.returncode != 0: raise RuntimeError((r.stderr or r.stdout)[-300:])
                 TODAY.update(at=time.time(), data=json.loads(r.stdout), err=None)
             except Exception as e:
-                TODAY['err'] = 'Не удалось получить данные из Odoo: ' + re.sub(r'password=\S+', 'password=***', str(e))[-200:]
+                TODAY['err'] = 'Не удалось получить данные из учётной системы: ' + re.sub(r'password=\S+', 'password=***', str(e))[-200:]
         d = dict(TODAY['data'] or {})
     with db() as c:
         row = c.execute('select cut, metrics from cutdata order by cut desc limit 1').fetchone()
@@ -194,7 +195,7 @@ def api_today():
         d['last_cut'] = row['cut']; d['last_subs'] = last.get('subs'); d['last_clients'] = last.get('clients')
     d['fetched_at'] = datetime.datetime.fromtimestamp(TODAY['at'], datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ') if TODAY['at'] else None
     d['error'] = TODAY['err']
-    return jsonify(d)
+    return jsonify(uchet_walk(d))
 PLAN = {'busy': False}
 PLOCK = threading.Lock()
 def plan_dir():
@@ -216,10 +217,10 @@ def api_plan():
                 if r.returncode != 0: raise RuntimeError((r.stderr or r.stdout)[-300:])
             except StopIteration: pass
             except Exception as e:
-                err = 'Не удалось пересчитать план из Odoo: ' + re.sub(r'password=\S+', 'password=***', str(e))[-200:]
+                err = 'Не удалось пересчитать план из учётной системы: ' + re.sub(r'password=\S+', 'password=***', str(e))[-200:]
     if not os.path.exists(fp): return jsonify(error=err or 'План ещё не посчитан'), 500
     d = json.load(open(fp, encoding='utf-8')); d['computed_at'] = datetime.datetime.fromtimestamp(os.path.getmtime(fp), datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'); d['error'] = err
-    return jsonify(d)
+    return jsonify(uchet_walk(d))
 @app.route('/api/plan/file')
 def api_plan_file():
     if role() == 'bank': return 'Нет доступа', 403
@@ -227,7 +228,7 @@ def api_plan_file():
     if not os.path.exists(fp): return 'План ещё не посчитан', 404
     fn = json.load(open(fp, encoding='utf-8'))['file']; path = os.path.join(plan_dir(), fn)
     if not os.path.exists(path): return 'Файл не найден', 404
-    return Response(open(path, 'rb').read(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': "attachment; filename=\"linko_plan.xlsx\"; filename*=UTF-8''%s" % quote(fn)})
+    return Response(uchet_xlsx(open(path, 'rb').read()), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': "attachment; filename=\"linko_plan.xlsx\"; filename*=UTF-8''%s" % quote(fn)})
 @app.route('/api/history')
 def api_history():
     if role() == 'bank': return jsonify(runs=[])

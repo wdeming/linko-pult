@@ -18,7 +18,7 @@
     if (force) { dash._set('today', null); }
     try { const r = await fetch('/api/today' + (force ? '?force=1' : '')); if (r.status === 401) { location.href = '/login'; return; }
       const j = await r.json(); if (j.mrr) dash._set('today', j); else dash._setErr('today', j.error || 'Нет данных');
-    } catch (e) { dash._setErr('today', 'Не удалось получить данные из Odoo'); }
+    } catch (e) { dash._setErr('today', 'Не удалось получить данные из учётной системы'); }
     if (btn) btn.disabled = false; dash.draw('today-sub'); dash.draw('today-tiles');
   }
   document.getElementById('today-refresh')?.addEventListener('click', () => loadToday(true));

@@ -96,7 +96,7 @@
   const PCOL = (k) => [k + '_total', k + '_SFA', k + '_POS', k + '_AI', k + '_PS'];
   const KGROUPS = {
     mrr: [
-      ['MRR на конец месяца', 'по журналу изменений MRR Odoo; подписки на паузе входят', [['', ['mrr_total', 'mrr_sfa', 'mrr_pos', 'mrr_ai', 'mrr_ps']]]],
+      ['MRR на конец месяца', 'по журналу изменений MRR учётной системы; подписки на паузе входят', [['', ['mrr_total', 'mrr_sfa', 'mrr_pos', 'mrr_ai', 'mrr_ps']]]],
       ['Подписки в базе', 'действующие и на паузе; AI ассистент и Perfect store — отдельные подписки на сервере SFA', [['', ['subs', 'subs_sfa', 'subs_pos', 'subs_ai', 'subs_ps']]]],
       ['Движение MRR за месяц', 'что добавилось и что потеряли за месяц среза', [['Новые продажи', PCOL('new')], ['Расширения', PCOL('exp')], ['Сокращения', PCOL('con')], ['Отток', PCOL('chu')]]],
       ['Удержание базы за месяц', 'GRR — без расширений, NRR — с расширениями; новые продажи не входят', [['GRR', PCOL('grr')], ['NRR', PCOL('nrr')]]],
@@ -238,7 +238,7 @@
       e.textContent = f ? 'Файл Excel: ' + f.label + ' · собран ' + new Date(f.good).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : 'Файл Excel для этого среза не собран.';
     });
   });
-  // ---------- блок «Сейчас в Odoo» ----------
+  // ---------- блок «Сейчас в учётной системе» ----------
   const RMG = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   const dayRu = (s) => (+s.slice(8, 10)) + ' ' + RMG[+s.slice(5, 7) - 1];
   const sgn = (v, k) => (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v), k);
@@ -255,7 +255,7 @@
     return t;
   }
   dash.draw('today-sub', (e) => {
-    const g = dash.data('today'); if (g.status !== 'ok') { e.textContent = g.status === 'error' ? (g.message || 'Не удалось получить данные') : 'Загружаю данные из Odoo…'; return; }
+    const g = dash.data('today'); if (g.status !== 'ok') { e.textContent = g.status === 'error' ? (g.message || 'Не удалось получить данные') : 'Загружаю данные из учётной системы…'; return; }
     const d = g.data; const at = d.fetched_at ? new Date(d.fetched_at).toLocaleString('ru-RU', {dateStyle: 'short', timeStyle: 'short'}) : '';
     e.textContent = 'На ' + dayRu(d.today) + ' ' + d.today.slice(0, 4) + '. Изменение MRR и поступления — с 1 ' + RMG[+d.today.slice(5, 7) - 1] + '. Данные получены ' + at + '.' + (d.error ? ' ' + d.error : '');
   });
@@ -323,7 +323,7 @@
   async function loadPlan(force) {
     if (planBusy) return; planBusy = true;
     const sub = document.getElementById('plan-sub'), btn = document.getElementById('plan-refresh');
-    if (sub) sub.textContent = force ? 'Пересчитываю план из Odoo, это до минуты…' : 'Загружаю план…'; if (btn) btn.disabled = true;
+    if (sub) sub.textContent = force ? 'Пересчитываю план из учётной системы, это до минуты…' : 'Загружаю план…'; if (btn) btn.disabled = true;
     try {
       const r = await fetch('/api/plan' + (force ? '?force=1' : '')); if (r.status === 401) { location.href = '/login'; return; }
       const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Не удалось получить план'); PLAN = j; drawPlan();

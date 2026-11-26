@@ -294,7 +294,7 @@ body[data-mode="fin"] .pl-cutbar{background:linear-gradient(135deg,color-mix(in 
 @media (max-width:1000px){.pl-krow{grid-template-columns:repeat(3,minmax(0,1fr))}.pl-kempty{display:none}}
 @media (max-width:560px){.pl-krow{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* доступ для банка (роль bank, 26.11.2026): скрытые блоки */
-.pl-bank #today,.pl-bank [data-tab="debts"],.pl-bank [data-tab="fin_cash"],.pl-bank [data-tab="fin_plan"],.pl-bank [data-tab="fin_bal"],.pl-bank [data-tab="fin_src"],.pl-bank [data-tab="exp"],
+.pl-bank [data-tab="debts"],.pl-bank [data-tab="fin_cash"],.pl-bank [data-tab="fin_plan"],.pl-bank [data-tab="fin_bal"],.pl-bank [data-tab="fin_src"],.pl-bank [data-tab="exp"],
 .pl-bank #debts,.pl-bank #fin_cash,.pl-bank #fin_plan,.pl-bank #fin_bal,.pl-bank #fin_src,.pl-bank #exp,
 .pl-bank #fig-mrr_jerr,.pl-bank #fig-ar_age,.pl-bank [data-dl="org"],.pl-bank [data-dl="calls"],.pl-bank [data-dl="debts"],.pl-bank [data-dl="exp"]{display:none!important}
 /* раздел «Цели и планы» (26.11.2026) */
