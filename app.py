@@ -82,6 +82,7 @@ def guard():
     if request.path in ('/login', '/healthz'): return
     if not session.get('u'):
         return (jsonify(error='Нужен вход'), 401) if request.path.startswith('/api/') else redirect('/login')
+    if request.path.startswith('/api/goals') and role() == 'bank': return jsonify(error='Нет доступа'), 403   # раздел «Цели и планы» банку не показывается
 LOGIN = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Пульт Linko — вход</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@700;800&display=swap">
 <style>:root{--a:#3b5bdb;--b:#0ca678}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;font:15px Inter,"Segoe UI",system-ui,sans-serif;color:#141b2d;

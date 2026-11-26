@@ -1,6 +1,6 @@
 (() => {
   const NODASH = ['fin_plan'];   // вкладки со своими данными (не по срезам)
-  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_hist', 'fin_cash', 'fin_bal', 'fin_rev', 'fin_seg', 'fin_ret', 'fin_src', 'fin_plan'];
+  const DOCS = ['mrr', 'churn', 'clients', 'multi', 'top20', 'revenue', 'cash', 'exp', 'cost', 'metrics', 'org', 'calls', 'debts', 'fin_pl', 'fin_hist', 'fin_cash', 'fin_bal', 'fin_rev', 'fin_seg', 'fin_ret', 'fin_src', 'fin_plan', 'goal_sales', 'goal_company', 'goal_dept'];
   // тип графика, формат, опции: row — колонка «Итого» по сериям (и сумма во всплывающей подсказке), col — строка «Итого» по строкам таблицы
   const CH = {
     mrr_end: ['stack', 'm', {row: 'Итого MRR'}], mrr_jerr: ['hbar', 'm', {col: true}], flow_SFA: ['group', 'm', {row: 'Чистое изменение', col: true}], flow_POS: ['group', 'm', {row: 'Чистое изменение', col: true}],
@@ -306,9 +306,10 @@
   dash.draw('msg', (e) => { e.textContent = msgText; });
   const say = (t) => { msgText = t; dash.draw('msg'); };
 
-  const lastDoc = {reports: 'mrr', fin: 'fin_pl'};
+  const lastDoc = {reports: 'mrr', fin: 'fin_pl', goals: 'goal_sales'};
   function show(doc, link) {
-    const mode = doc.startsWith('fin_') ? 'fin' : 'reports'; lastDoc[mode] = doc; document.body.dataset.mode = mode;
+    if (document.body.classList.contains('pl-bank') && /^(goal_|debts|exp$|fin_cash|fin_bal|fin_src|fin_plan)/.test(doc)) doc = 'mrr';   // банку эти разделы недоступны
+    const mode = doc.startsWith('fin_') ? 'fin' : doc.startsWith('goal_') ? 'goals' : 'reports'; lastDoc[mode] = doc; document.body.dataset.mode = mode;
     document.querySelectorAll('.pl-mode').forEach((b) => b.setAttribute('aria-current', b.dataset.mode === mode ? 'true' : 'false'));
     const ct = document.getElementById('cuts-title'); if (ct) ct.textContent = mode === 'fin' ? 'Финансы на срез' : 'Отчёты по срезам';
     document.querySelectorAll('.pl-doc').forEach((s) => { s.hidden = s.dataset.doc !== doc; });
