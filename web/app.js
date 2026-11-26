@@ -73,10 +73,12 @@
   }
   const hideTileTip = () => { tileTip.hidden = true; };
   window.addEventListener('scroll', hideTileTip, {passive: true});
-  function tile(r, M, prevCut) {
+  function tile(r, M, prevCut, short) {
     const t = el('div', 'pl-tile ' + tone(r)), l = el('div', 'pl-tl');
-    const tot = /, всего$/.test(r.label);
-    l.append(el('span', '', r.prod ? r.label.replace(/, (SFA|POS|AI ассистент|Perfect store)$/, '') : r.label.replace(/, всего$/, '')));
+    const tot = /, всего$/.test(r.label) || (short && (r.key === 'mrr_total' || r.key === 'subs'));
+    // short — плитка внутри группы: что за показатель, говорит заголовок группы и строки, в плитке только продукт
+    const SHORTLAB = {mrr_paused: 'MRR на паузе', subs_paused: 'Подписок на паузе'};
+    l.append(el('span', '', short && SHORTLAB[r.key] ? SHORTLAB[r.key] : short && (r.prod || tot) ? '' : r.prod ? r.label.replace(/, (SFA|POS|AI ассистент|Perfect store)$/, '') : r.label.replace(/, всего$/, '')));
     if (r.prod) l.append(el('span', 'pl-chip ' + r.prod.toLowerCase(), PNAME[r.prod] || r.prod));
     else if (tot) l.append(el('span', 'pl-chip all', 'ВСЕГО'));
     const row = el('div', 'pl-tr');
@@ -90,11 +92,43 @@
     t.addEventListener('blur', hideTileTip);
     return t;
   }
+  // группы плиток раздела: [заголовок группы, подсказка, [[подпись строки, [ключи по колонкам: всего, SFA, POS, AI, PS]], ...]]
+  const PCOL = (k) => [k + '_total', k + '_SFA', k + '_POS', k + '_AI', k + '_PS'];
+  const KGROUPS = {
+    mrr: [
+      ['MRR на конец месяца', 'по журналу изменений MRR Odoo; подписки на паузе входят', [['', ['mrr_total', 'mrr_sfa', 'mrr_pos', 'mrr_ai', 'mrr_ps']]]],
+      ['Подписки в базе', 'действующие и на паузе; AI ассистент и Perfect store — отдельные подписки на сервере SFA', [['', ['subs', 'subs_sfa', 'subs_pos', 'subs_ai', 'subs_ps']]]],
+      ['Движение MRR за месяц', 'что добавилось и что потеряли за месяц среза', [['Новые продажи', PCOL('new')], ['Расширения', PCOL('exp')], ['Сокращения', PCOL('con')], ['Отток', PCOL('chu')]]],
+      ['Удержание базы за месяц', 'GRR — без расширений, NRR — с расширениями; новые продажи не входят', [['GRR', PCOL('grr')], ['NRR', PCOL('nrr')]]],
+      ['Пауза', 'входит в MRR и в базу подписок', [['', ['mrr_paused', 'subs_paused']]]],
+    ],
+  };
   function tiles(e, keysOrDoc) {
     const M = rowsOf('metrics'); if (!M) return dash0(e);
     const cut = curCut(M), cs = cutsOf(M), i = cs.indexOf(cut), prev = i > 0 ? ru(cs[i - 1]).slice(0, 5) : '';
     const rows = Array.isArray(keysOrDoc) ? keysOrDoc.map((k) => M.find((r) => r.cut === cut && r.key === k)).filter(Boolean)
       : M.filter((r) => r.cut === cut && r.doc === keysOrDoc && r.kind !== 'file');
+    const G = !Array.isArray(keysOrDoc) && KGROUPS[keysOrDoc];
+    e.classList.toggle('pl-grouped', !!G);
+    if (G && rows.length) {
+      const by = new Map(rows.map((r) => [r.key, r])), used = new Set(), out = [];
+      G.forEach(([title, hint, lines]) => {
+        const box = el('div', 'pl-kgrp'), hd = el('div', 'pl-kgh'); hd.append(el('h3', '', title)); if (hint) hd.append(el('span', '', hint)); box.append(hd);
+        let any = false;
+        lines.forEach(([lab, keys]) => {
+          if (!keys.some((k) => by.has(k))) return;
+          any = true;
+          if (lab) box.append(el('div', 'pl-krl', lab));
+          const row = el('div', 'pl-krow');
+          keys.forEach((k) => { const r = by.get(k); if (r) { used.add(k); row.append(tile(r, M, '', true)); } else row.append(el('div', 'pl-kempty')); });
+          box.append(row);
+        });
+        if (any) out.push(box);
+      });
+      const rest = rows.filter((r) => !used.has(r.key));
+      if (rest.length) { const box = el('div', 'pl-kgrp'), hd = el('div', 'pl-kgh'), row = el('div', 'pl-krow'); hd.append(el('h3', '', 'Прочее')); row.append(...rest.map((r) => tile(r, M, ''))); box.append(hd, row); out.push(box); }
+      e.replaceChildren(...out); return;
+    }
     e.replaceChildren(...rows.map((r) => tile(r, M, Array.isArray(keysOrDoc) ? prev : '')));
     if (!rows.length) e.append(el('p', 'pl-file', 'Для этого среза показателей нет.'));
   }
@@ -211,7 +245,7 @@
   const PNAME = {AI: 'AI ассистент', PS: 'Perfect store'};   // допродукты SFA — отдельные подписки (поле «Тип подписки»)
   function ttile(label, value, kind, delta, deltaKind, note, good, chip) {
     const t = el('div', 'pl-tile'), l = el('div', 'pl-tl');
-    l.append(el('span', '', label)); if (chip) l.append(el('span', 'pl-chip ' + (chip === 'ВСЕГО' ? 'all' : chip.toLowerCase()), chip));
+    l.append(el('span', '', label)); if (chip) l.append(el('span', 'pl-chip ' + (chip === 'ВСЕГО' ? 'all' : chip === 'AI ассистент' ? 'ai' : chip === 'Perfect store' ? 'ps' : chip.toLowerCase()), chip));
     let tn = '';
     if (delta && delta.v != null && good) tn = Math.abs(delta.v) < 1 ? '' : ((delta.v > 0) === (good === 'up') ? 'good' : 'bad');
     t.className = 'pl-tile ' + tn;
@@ -229,17 +263,22 @@
   dash.draw('today-tiles', (e) => {
     const g = dash.data('today'); if (g.status !== 'ok' || !g.data.mrr) { e.replaceChildren(); return; }
     const d = g.data, P = ['SFA', 'POS', 'AI', 'PS'], s = (o) => P.reduce((a, p) => a + (o && o[p] || 0), 0);
-    const ad = (o) => (o && o.AI || 0) + (o && o.PS || 0);
     const pe = 'к ' + d.prev_end.slice(8, 10) + '.' + d.prev_end.slice(5, 7), lc = d.last_cut ? 'к срезу ' + d.last_cut.slice(8, 10) + '.' + d.last_cut.slice(5, 7) : '';
     const mv = (et) => s(d.mov[et] || {}), net = mv('0_creation') + mv('1_expansion') + mv('15_contraction') + mv('2_churn');
     const ch = (a, b) => ({v: a - b, pct: b ? a / b - 1 : null});
     const subsNow = s(d.subs);
     const ps = '1–' + (+d.prev_same.slice(8, 10)) + ' ' + RMG[+d.prev_same.slice(5, 7) - 1];
-    e.replaceChildren(
-      ttile('MRR', s(d.mrr), 'm', Object.assign(ch(s(d.mrr), s(d.mrr_prev)), {text: pe}), 'm', null, 'up', 'ВСЕГО'),
-      ttile('MRR', d.mrr.SFA, 'm', Object.assign(ch(d.mrr.SFA, d.mrr_prev.SFA), {text: pe}), 'm', null, 'up', 'SFA'),
-      ttile('MRR', d.mrr.POS, 'm', Object.assign(ch(d.mrr.POS, d.mrr_prev.POS), {text: pe}), 'm', null, 'up', 'POS'),
-      ttile('MRR допродуктов SFA', ad(d.mrr), 'm', Object.assign(ch(ad(d.mrr), ad(d.mrr_prev)), {text: pe}), 'm', 'AI ассистент ' + fmt(d.mrr.AI || 0, 'm') + ' · Perfect store ' + fmt(d.mrr.PS || 0, 'm'), 'up', 'AI · PS'),
+    const prodT = (p, chip) => { const t = ttile('MRR', d.mrr[p] || 0, 'm', Object.assign(ch(d.mrr[p] || 0, d.mrr_prev[p] || 0), {text: pe}), 'm', 'подписок ' + (d.subs[p] || 0), 'up', chip); t.classList.add('pl-prodt', 'pl-p-' + p.toLowerCase()); return t; };
+    const big = ttile('MRR всего', s(d.mrr), 'm', Object.assign(ch(s(d.mrr), s(d.mrr_prev)), {text: pe}), 'm', null, 'up', 'ВСЕГО');
+    big.classList.add('pl-bigt');
+    const tot = s(d.mrr) || 1, bar = el('div', 'pl-mix'), lg = el('div', 'pl-mixlg');
+    P.forEach((p) => {
+      const v = d.mrr[p] || 0, sh = v / tot, seg = el('i', 'pl-p-' + p.toLowerCase()); seg.style.width = Math.max(sh * 100, v > 0 ? 0.8 : 0) + '%'; seg.title = (PNAME[p] || p) + ': ' + fmt(v, 'm'); bar.append(seg);
+      const it = el('span'), sw = el('b', 'pl-p-' + p.toLowerCase()); it.append(sw, (PNAME[p] || p) + ' ' + nfd(1).format(sh * 100) + '%'); lg.append(it);
+    });
+    big.append(bar, lg);
+    e.replaceChildren(big,
+      prodT('SFA', 'SFA'), prodT('POS', 'POS'), prodT('AI', 'AI ассистент'), prodT('PS', 'Perfect store'),
       ttile('Подписок в базе', subsNow, 'n', d.last_subs != null ? Object.assign(ch(subsNow, d.last_subs), {text: lc}) : null, 'n', 'SFA ' + d.subs.SFA + ' · POS ' + d.subs.POS + ' · AI ' + (d.subs.AI || 0) + ' · PS ' + (d.subs.PS || 0), 'up'),
       netTile(ttile('Изменение MRR с 1-го числа', sgn(net, 'm'), 'm', null, 'm', 'новые ' + sgn(mv('0_creation'), 'm') + ' · расширения ' + sgn(mv('1_expansion'), 'm') + ' · сокращения ' + sgn(mv('15_contraction'), 'm') + ' · отток ' + sgn(mv('2_churn'), 'm'), 'up'), net),
       ttile('Поступило денег с 1-го числа', d.cash_in, 'm', Object.assign(ch(d.cash_in, d.cash_in_prev), {text: 'к ' + ps}), 'm', 'комиссии Payme / Click / Paynet ' + fmt(d.cash_comm, 'm'), 'up'));

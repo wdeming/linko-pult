@@ -271,3 +271,25 @@ body[data-mode="fin"] .pl-cutbar{background:linear-gradient(135deg,color-mix(in 
 .pl-method ul{padding-left:20px}
 /* допродукты SFA (поле «Тип подписки», с 26.11.2026) */
 .pl-chip.ai,.pl-chip.ps{border-color:#7c5cdb;color:#7c5cdb;background:color-mix(in srgb,#7c5cdb 10%,transparent)}
+/* «Сейчас в Odoo»: большой MRR всего (2 ряда) + 4 продукта 2×2 (26.11.2026) */
+.pl-today .pl-hero{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pl-today .pl-bigt{grid-row:span 2;justify-content:center;gap:8px}
+.pl-today .pl-bigt .pl-tv{font-size:44px}
+.pl-mix{display:flex;height:10px;border-radius:999px;overflow:hidden;background:var(--color-border-line);margin-top:6px}
+.pl-mix i{display:block;height:100%}
+.pl-mixlg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--color-fg-muted)}
+.pl-mixlg span{display:inline-flex;align-items:center;gap:5px}.pl-mixlg b{width:9px;height:9px;border-radius:3px;display:inline-block}
+.pl-p-sfa{background:var(--color-ok)}.pl-p-pos{background:#4c8dff}.pl-p-ai{background:#9b7cf2}.pl-p-ps{background:#e3a43c}
+.pl-chip.ps{border-color:#e3a43c;color:#e3a43c;background:color-mix(in srgb,#e3a43c 10%,transparent)}
+@media (max-width:700px){.pl-today .pl-hero{grid-template-columns:repeat(2,minmax(0,1fr))}.pl-today .pl-bigt{grid-row:auto;grid-column:1/-1}}
+/* плитки разделов по группам */
+.pl-kpis.pl-grouped{display:flex;flex-direction:column;gap:18px}
+.pl-kgrp{display:flex;flex-direction:column;gap:8px}
+.pl-kgh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;border-bottom:1px solid var(--color-border-line);padding-bottom:6px}
+.pl-kgh h3{margin:0;font:700 14px/1.3 var(--font-head);letter-spacing:.01em;text-transform:uppercase;color:var(--color-fg)}
+.pl-kgh span{font-size:12px;color:var(--color-fg-muted)}
+.pl-krl{font-size:12px;font-weight:600;color:var(--color-fg-muted);margin-top:2px}
+.pl-krow{display:grid;gap:var(--cds-gap-sm);grid-template-columns:repeat(5,minmax(0,1fr))}
+.pl-kempty{min-height:1px}
+@media (max-width:1000px){.pl-krow{grid-template-columns:repeat(3,minmax(0,1fr))}.pl-kempty{display:none}}
+@media (max-width:560px){.pl-krow{grid-template-columns:repeat(2,minmax(0,1fr))}}
