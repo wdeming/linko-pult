@@ -60,7 +60,7 @@ for cut in cuts:
                                     ('con', 'Сокращения за месяц', '15_contraction', -1, 'down'), ('chu', 'Отток за месяц', '2_churn', -1, 'down')):
         add('mrr', key + '_total', lab + ', всего', sign * sum(mov(e, p) for p in ALLP), 'm', good)
         for p in ALLP:
-            if p in (F, PP) or p in R['MRR']: add('mrr', key + '_' + p, '%s, %s' % (lab, PN[p]), sign * mov(e, p), 'm', good, p)
+            if p in (F, PP) or (key == 'new' and p in R['MRR']): add('mrr', key + '_' + p, '%s, %s' % (lab, PN[p]), sign * mov(e, p), 'm', good, p)
     _gn = {p: M['GN'].get('%s|%s' % (p, m)) for p in ALLP}; S0 = sum(g['start'] for g in _gn.values() if g)
     lost = sum(mov('2_churn', p) + mov('15_contraction', p) for p in ALLP if _gn[p]); gain = sum(mov('1_expansion', p) for p in ALLP if _gn[p])
     add('mrr', 'grr_total', 'GRR месяца, всего', (S0 + lost) / S0, 'p', 'up')
