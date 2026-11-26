@@ -44,8 +44,9 @@ for x in F['inv']:
             LATE_OUT[m] += v                                # услуга месяца m, счёт выставлен позже
             if x['d'] <= CUT: LATE_IN[dm] += v              # счёт месяца dm за прошлый период
     for m in MR:      # отложенная выручка на конец месяца: выставлено до конца месяца, а признаётся позже
-        if dm <= m: DEF[m] += sum(v for mm, v in sp.items() if mm > m)
-recm = lambda m: sum(REC[(k, m)] for k in KINDS)
+        if dm <= m: DEF[m] += sum(v for mm, v in sp.items() if mm > m) * x.get('paid', 1.0)   # только оплаченная часть счёта (решение 26.11.2026)
+recm_period = lambda m: sum(REC[(k, m)] for k in KINDS)   # по периоду услуги — только для сверок
+recm = lambda m: sum(INVK[(k, m)] for k in KINDS)          # ГЛАВНАЯ выручка (решение 26.11.2026): как в Odoo — по дате счёта, вся сумма сразу (учётная политика)
 # ---------- MRR на конец месяца по журналу (POS + SFA) ----------
 SUBS = F['subs']; LOG = F['log']
 cum_sub = collections.defaultdict(lambda: collections.defaultdict(float))   # подписка -> месяц -> движение
@@ -178,7 +179,7 @@ CON_T = sum(x['con'] for x in MONTHLY.values()); CON_B = sum(x['con_back'] for x
 # ---------- мостик: выручка по периодам услуги → как в Odoo (по дате счёта, вся сумма сразу) ----------
 pm = lambda m: MON[MON.index(m) - 1] if MON.index(m) > 0 else '2026-01'
 BR = {m: {'ddef': DEF.get(m, 0) - DEF.get(pm(m), 0), 'late_in': LATE_IN[m], 'late_out': LATE_OUT[m]} for m in MS}
-for m in MS: assert abs(recm(m) + BR[m]['ddef'] + BR[m]['late_in'] - BR[m]['late_out'] - INV[m]) < 5, ('мостик не сходится', m)
+# мостик «по периоду → как в Odoo» больше не нужен: главная выручка — как в Odoo (26.11.2026)
 for m in MS: EG[(FG.G_BANK, m)] += COM[m]
 # ================= Excel =================
 wb = openpyxl.Workbook(); wb.remove(wb.active)
@@ -195,8 +196,8 @@ def line(lab, vals, key=None, total=True, fmt=NUM, bold=False, fill=None):
     if key: ROW[key] = r
     r += 1
 def frm(expr): return ['=' + expr.replace('#', L(cc)) for cc in range(2, 2 + n)]
-section(ws, 'A%d' % r, 'ВЫРУЧКА (признанная — по периоду услуги)'); r += 1
-for k in KINDS: line('    ' + k, [round(REC[(k, m)]) for m in MS], k)
+section(ws, 'A%d' % r, 'ВЫРУЧКА (по дате счёта — учётная политика компании)'); r += 1
+for k in KINDS: line('    ' + k, [round(INVK[(k, m)]) for m in MS], k)
 line('ИТОГО ВЫРУЧКА', frm('+'.join('#%d' % ROW[k] for k in KINDS)), 'rev', bold=True)
 section(ws, 'A%d' % r, 'СЕБЕСТОИМОСТЬ'); r += 1
 line('    ФОТ поддержки, внедрения и ключевых клиентов', [round(COGS_FOT[m]) for m in MS], 'cfot')
@@ -217,28 +218,19 @@ line('ИТОГО ОПЕРАЦИОННЫЕ РАСХОДЫ', ['=SUM(%s%d:%s%d)' % 
 line('EBITDA', frm('#%d-#%d' % (ROW['gp'], ROW['opex'])), 'ebitda', bold=True)
 line('    EBITDA, % от выручки', ['=IF(#%d=0,0,#%d/#%d)'.replace('#', L(cc)) % (ROW['rev'], ROW['ebitda'], ROW['rev']) for cc in range(2, 2 + n)], total=False, fmt=PCT)
 line('Капитальные расходы (техника и мебель) — не входят в EBITDA', [round(CAPEX[m]) for m in MS], 'capex')
-r += 1; section(ws, 'A%d' % r, 'ВЫРУЧКА КАК В ODOO — по дате счёта, вся сумма сразу (учётная политика компании)'); r += 1
-line('Выручка по периодам услуги (строка ИТОГО ВЫРУЧКА)', frm('#%d' % ROW['rev']), 'b0')
-line('    + рост оплаченного клиентами вперёд за будущие месяцы', [round(BR[m]['ddef']) for m in MS], 'b1')
-line('    + счета месяца за услуги прошлых месяцев', [round(BR[m]['late_in']) for m in MS], 'b2')
-line('    − услуги месяца, счёт на которые выставлен позже', [round(-BR[m]['late_out']) for m in MS], 'b3')
-line('ВЫРУЧКА КАК В ODOO', frm('#%d+#%d+#%d+#%d' % (ROW['b0'], ROW['b1'], ROW['b2'], ROW['b3'])), 'rodoo', bold=True)
-line('    проверка: выставлено счетов за месяц (Odoo)', [round(INV[m]) for m in MS])
-line('EBITDA, если выручку брать как в Odoo', frm('#%d-#%d-#%d' % (ROW['rodoo'], ROW['cogs'], ROW['opex'])), 'eodoo')
 r += 1; section(ws, 'A%d' % r, 'Справочно'); r += 1
 line('    MRR на конец месяца', [round(MRR_END[m]) for m in MS], total=False)
 notes(ws, r + 1, [
-  'Выручка — признанная: каждая строка счета клиенту разнесена по дням периода услуги (поля периода в строке счета Odoo). Годовая предоплата признаётся помесячно, а не в месяце счета. Строки без периода — в месяце счета. Учитываются и счета, выставленные после %s за услуги до этой даты.' % CUT_RU,
+  'Выручка — по учётной политике компании: проведённые счета клиентам Odoo по дате счёта, вся сумма признаётся в момент продажи (подписка на 2, 3, 6, 12 месяцев — в месяце счёта). Возвраты вычитаются.',
   'Себестоимость — факт из реестра «Расходы» Odoo: ФОТ отделов поддержки, внедрения и ключевых клиентов (оклад, KPI, прочие выплаты за период + доля налогов ЗП) и хостинг за период. Файл «Себестоимость_поддержки_внедрения_инфраструктуры_%s.xlsx».' % SUF,
   'Операционные расходы — реестр «Расходы» за период (сумма делится по дням периода) минус то, что уже в себестоимости; комиссии платёжных систем — исходящие платежи Payme / Click / Paynet.',
   'EBITDA = валовая прибыль − операционные расходы. Покупка техники и мебели — капитальные расходы, показаны отдельно под EBITDA. Процентов по займам в реестре расходов нет.',
-  'Главная выручка — по периоду услуги (как требует МСФО 15 и как смотрит банк). В Odoo по учётной политике компании выручка признаётся сразу в момент продажи — эта цифра показана ниже («Выручка как в Odoo») с мостиком: разница = рост оплаченного клиентами вперёд за будущие месяцы ± счета, выставленные не в месяце услуги. Обе цифры из одних и тех же счетов Odoo и сходятся до суммы.',
+  'Клиенты, оплатившие подписку вперёд, — справочно на вкладке «Выручка»: оплаченная часть счетов, приходящаяся на будущие месяцы.',
   'Суммы в долларах — по управленческому курсу 12 000 сум/$ (методологическое решение менеджмента). Данные с апреля 2026: до этого расходы в Odoo по месяцам не разнесены.'])
 widths(ws, {'A': 56, **{L(cc): 15 for cc in range(2, 3 + n)}}); ws.freeze_panes = 'B4'
 PL = {m: {'rev': recm(m), 'cogs': COGS_FOT[m] + HOST[m], 'opex': sum(v[m] for _, v in OPX)} for m in MS}
 for m in MS:
     PL[m]['gp'] = PL[m]['rev'] - PL[m]['cogs']; PL[m]['ebitda'] = PL[m]['gp'] - PL[m]['opex']
-    PL[m]['rev_odoo'] = INV[m]; PL[m]['ebitda_odoo'] = INV[m] - PL[m]['cogs'] - PL[m]['opex']
     assert abs(sum(EG[(g, m)] for g in FG.GROUPS) - PL[m]['cogs'] - PL[m]['opex']) < 5, ('группы расходов не сходятся с P&L', m)
 # ---- 2. Деньги ----
 MC = [m for m in ('2026-01', '2026-02', '2026-03') if 'cash' in HC.get(m, {})] + MS     # янв–мар — пакет (ДДС), с апреля — Odoo
@@ -282,21 +274,19 @@ widths(ws, {'A': 54, **{L(cc): 15 for cc in range(2, 3 + n)}}); ws.freeze_panes 
 last3 = [CS[m]['op'] for m in MS[-3:]]; avg3 = sum(last3) / len(last3)
 # ---- 3. Выручка ----
 ws = wb.create_sheet('Выручка и оплачено вперёд')
-title(ws, 'A1', 'MRR, признанная, выставленная и полученная выручка по месяцам (на %s), сум' % CUT_RU)
-header(ws, 3, ['Месяц', 'MRR на конец месяца', 'Признано (выручка периода)', 'Выставлено счетов', 'Получено денег', 'Оплачено вперёд за будущие месяцы (на конец месяца)', 'в т.ч. признано SFA', 'в т.ч. признано POS', 'Выставлено SFA', 'Выставлено POS'])
+title(ws, 'A1', 'MRR, выручка и полученные деньги по месяцам (на %s), сум' % CUT_RU)
+header(ws, 3, ['Месяц', 'MRR на конец месяца', 'Выручка (по дате счёта)', 'Получено денег', 'Оплачено клиентами вперёд за будущие месяцы (на конец месяца)'] + ['в т.ч. ' + k.replace('Подписки ', '') for k in KINDS])
 r = 4
 for m in MR:
-    datarow(ws, r, ['%s 2026' % RUS[m], round(MRR_END[m]), round(recm(m)), round(INV[m]), round(IN[m]), round(DEF.get(m, 0)), round(REC[('Подписки SFA', m)]), round(REC[('Подписки POS', m)]),
-                    round(INVK[('Подписки SFA', m)]), round(INVK[('Подписки POS', m)])], fmts=fm(9)); r += 1
-totalrow(ws, r, ['ИТОГО'] + [None] + ['=SUM(%s4:%s%d)' % (L(cc), L(cc), r - 1) for cc in (3, 4, 5)] + [None] + ['=SUM(%s4:%s%d)' % (L(cc), L(cc), r - 1) for cc in (7, 8, 9, 10)], fmts=fm(9))
+    datarow(ws, r, ['%s 2026' % RUS[m], round(MRR_END[m]), round(recm(m)), round(IN[m]), round(DEF.get(m, 0))] + [round(INVK[(k, m)]) for k in KINDS], fmts=fm(4 + len(KINDS))); r += 1
+totalrow(ws, r, ['ИТОГО', None] + ['=SUM(%s4:%s%d)' % (L(cc), L(cc), r - 1) for cc in (3, 4)] + [None] + ['=SUM(%s4:%s%d)' % (L(cc), L(cc), r - 1) for cc in range(6, 6 + len(KINDS))], fmts=fm(4 + len(KINDS)))
 r += 2; header(ws, r, ['Дебиторка на %s (остаток на сегодня)' % CUT_RU, 'Счетов', 'Сумма, сум']); r += 1; r1 = r
 for b in BK: datarow(ws, r, [b, ARN[b], round(AR[b])], fmts=[None, NUM, NUM], blue_inputs=False); r += 1
 totalrow(ws, r, ['ИТОГО неоплаченных счетов', '=SUM(B%d:B%d)' % (r1, r - 1), '=SUM(C%d:C%d)' % (r1, r - 1)], fmts=[None, NUM, NUM]); r += 1
 datarow(ws, r, ['Поступления, не привязанные к счетам (на ту же дату)', F['unmatched']['n'], round(F['unmatched']['s'])], fmts=[None, NUM, NUM], blue_inputs=False)
 notes(ws, r + 2, [
-  'Признано — строки счетов разнесены по дням периода услуги; выставлено — по дате счета; получено — проведённые платежи клиентов по дате (без внутренних переводов).',
-  'Скачки «выставлено» по SFA — годовые и полугодовые предоплаты: счёт выставляется разом, а выручка признаётся по месяцам. «Оплачено вперёд» — выставлено до конца месяца за услуги следующих месяцев. По учётной политике компании это уже выручка (в Odoo признаётся сразу), здесь — справочно.',
-  'На счёте 201000 в Odoo остался остаток отсрочки по счетам янв–апр 2026 (не списывается с апреля) — по политике «выручка сразу» его нужно сторнировать. Пульт считает по строкам счетов и от этих проводок не зависит.',
+  'Выручка — проведённые счета клиентам по дате счёта, вся сумма сразу (учётная политика компании); получено — проведённые платежи клиентов по дате (без внутренних переводов).',
+  'Оплачено клиентами вперёд — оплаченная часть счетов, приходящаяся на месяцы после конца месяца (по дням периода услуги в строке счёта; доля оплаты — по остатку долга по счёту). Это уже выручка, здесь — справочно: выручка ближайших месяцев, за которую деньги получены.',
   'Дебиторка завышена: в Odoo много поступлений не привязано к счетам (строка выше), поэтому оплаченные счета числятся неоплаченными. Реальную дебиторку покажет сверка платежей со счетами в Odoo.'])
 widths(ws, {'A': 46, **{L(cc): 17 for cc in range(2, 11)}}); ws.freeze_panes = 'B4'
 # ---- 4. Сегменты ----
@@ -350,10 +340,10 @@ HM = sorted(HC) + MS; HV = {}
 for m in HC:
     h = HC[m]; HV[m] = {'src': h['src'], 'rev': h['rev'], 'exp': h['exp'], 'capex': h.get(FG.CAPEX, 0.0), 'tap': h.get(FG.TAP, 0.0), 'in': h.get('cash', {}).get('in'), 'odoo': None, 'chk': h['chk'].get('ebitda')}
 for m in MS:
-    HV[m] = {'src': 'odoo', 'rev': {k: REC[(k, m)] for k in FG.REV}, 'exp': {g: EG[(g, m)] for g in FG.GROUPS}, 'capex': CAPEX[m], 'tap': 0.0, 'in': IN[m], 'odoo': INV[m], 'chk': None}
+    HV[m] = {'src': 'odoo', 'rev': {k: INVK[(k, m)] for k in FG.REV}, 'exp': {g: EG[(g, m)] for g in FG.GROUPS}, 'capex': CAPEX[m], 'tap': 0.0, 'in': IN[m], 'odoo': INV[m], 'chk': None}
 for v in HV.values():
     v['revt'] = sum(v['rev'].values()); v['expt'] = sum(v['exp'].get(g, 0.0) for g in FG.GROUPS); v['ebitda'] = v['revt'] - v['expt']
-SRC_RU = {'fin': 'Файл финансиста', 'pack': 'Пакет (PL_Linko)', 'odoo': 'Odoo'}; METH = {'fin': 'по оплатам', 'pack': 'по оплатам', 'odoo': 'по периоду услуги'}
+SRC_RU = {'fin': 'Файл финансиста', 'pack': 'Пакет (PL_Linko)', 'odoo': 'Odoo'}; METH = {'fin': 'по оплатам', 'pack': 'по оплатам', 'odoo': 'по дате счёта'}
 YK = {y: ('Итого %s' % y) if y < '2026' or LAST_M[5:] == '12' else 'Итого %s, янв–%s' % (y, RUS[LAST_M][:3].lower()) for y in sorted({m[:4] for m in HM})}
 HROWS = []
 def hrow(lab, f, kind='m'):
@@ -372,7 +362,19 @@ hrow('ВЫРУЧКА', lambda v: v['revt'])
 for g in FG.GROUPS: hrow(g, lambda v, g=g: v['exp'].get(g, 0.0))
 hrow('РАСХОДЫ ВСЕГО', lambda v: v['expt']); hrow('EBITDA', lambda v: v['ebitda']); hrow('EBITDA, % выручки', lambda v: (v['ebitda'], v['revt']), 'p')
 hrow('Капрасходы: техника и мебель (не в EBITDA)', lambda v: v['capex']); hrow('Финансирование Tap (не в EBITDA)', lambda v: v['tap'])
-hrow('Справочно: выручка как в Odoo (по дате счёта)', lambda v: v['odoo'], 'mr'); hrow('Справочно: получено денег от клиентов', lambda v: v['in'], 'mr')
+# Cashflow 2026 (решение 26.11.2026): поступления от клиентов янв–окт 2026 = 7,2 млрд по данным менеджмента; разница с учётной системой —
+# поступления вне учётной системы в январе–марте (до перехода на Odoo), распределены пропорционально поступлениям пакета
+CASH_MGMT_JO = 7.2e9
+_jo = [m for m in HM if '2026-01' <= m <= '2026-10']; _jm = [m for m in HM if '2026-01' <= m <= '2026-03' and HV[m].get('in')]
+OFF = {}
+if len(_jo) == 10 and _jm:
+    _gap = CASH_MGMT_JO - sum(HV[m]['in'] or 0 for m in _jo); _b = sum(HV[m]['in'] for m in _jm)
+    OFF = {m: _gap * HV[m]['in'] / _b for m in _jm}
+for m in HM: HV[m]['off'] = OFF.get(m)
+hrow('Поступления от клиентов (учётная система и пакет)', lambda v: v['in'], 'mr')
+if OFF:
+    hrow('Поступления вне учётной системы (янв–мар 2026)', lambda v: v['off'] or (0.0 if v['src'] != 'fin' else None), 'm')
+    hrow('CASHFLOW: ПОСТУПЛЕНИЯ ОТ КЛИЕНТОВ ВСЕГО', lambda v: (v['in'] or 0) + (v['off'] or 0) if v['in'] is not None else None, 'mr')
 hrow('Справочно: EBITDA в исходном файле', lambda v: v['chk'], 'mr')
 if HM:
     ws = wb.create_sheet('История с 2025')
@@ -387,8 +389,8 @@ if HM:
     notes(ws, r + 1, [
       '2025 — файл финансиста «%s» (лист P&L, факт): учёт по оплатам — выручка = полученные деньги, расходы = оплаты. Техника и мебель и «Финансирование Tap» вынесены под EBITDA, поэтому EBITDA 2025 здесь лучше, чем в файле, ровно на эти суммы (строка «EBITDA в исходном файле»).' % (HIST or {}).get('files', {}).get('fin', 'PL_last_v.xlsx'),
       'Январь–март 2026 — управленческий пакет «%s» (P&L: PL_Linko — файл финансиста, тоже по оплатам). Налоги и сборы / IT Park включены в расходы (в пакете — под EBIT), техника за март — в капрасходы (по ДДС). Биллинг в Odoo до апреля неполный, поэтому выручка февраля–марта — из пакета (решение менеджмента).' % (HIST or {}).get('files', {}).get('pack', 'пакет'),
-      'С апреля 2026 — Odoo: выручка по периоду услуги (как на листе «P&L и EBITDA»), расходы — реестр «Расходы» за период + комиссии платёжных систем. Справочно — выручка как в Odoo (по дате счёта, вся сумма сразу) и полученные деньги.',
-      'Смена учёта в апреле 2026: до апреля выручка по оплатам (годовая предоплата — в месяце оплаты), с апреля — по периоду услуги (годовая предоплата делится на 12 месяцев). Расходы во все периоды сгруппированы одинаково (единый план статей: fin_groups.py).',
+      'С апреля 2026 — Odoo: выручка — проведённые счета по дате счёта, вся сумма сразу (учётная политика компании, как на листе «P&L и EBITDA»), расходы — реестр «Расходы» за период + комиссии платёжных систем.',
+      'Во всех периодах годовая и полугодовая предоплата признаётся в месяце продажи: до апреля — в месяце оплаты, с апреля — в месяце счёта. Расходы во все периоды сгруппированы одинаково (единый план статей). Cashflow 2026: поступления от клиентов по учётной системе и пакету плюс поступления вне учётной системы в январе–марте (до перехода на Odoo) — всего 7,2 млрд за январь–октябрь по данным менеджмента.',
       'Займы и финансирование учредителей — не выручка и не расход: долги ведутся в разделе «Долги», финансирование 2024–2025 — справкой на листе «Баланс». Суммы в долларах — по 12 000 сум/$.'])
     widths(ws, {'A': 46, **{L(cc): 13 for cc in range(2, 3 + len(HM) + len(YK))}}); ws.freeze_panes = 'B4'
 # ---- 7. Баланс на срез ----
@@ -433,13 +435,13 @@ if HC:
         chk('EBITDA янв–мар 2026', 'Пакет', sum(HC[m]['chk']['ebitda'] for m in q1), 'Пульт (взято)', sum(HV[m]['ebitda'] for m in q1),
             'В пульте налоги и сборы / IT Park — в расходах (как в реестре Odoo с апреля), техника за март — в капрасходах')
         fm_ = [m for m in ('2026-02', '2026-03') if m in HC]
-        chk('Выручка февраль–март 2026', 'Пакет, PL_Linko (взято)', sum(HV[m]['revt'] for m in fm_), 'Odoo по периоду услуги', sum(recm(m) for m in fm_),
-            'Биллинг в Odoo до апреля неполный (счета заводились не на все оплаты) — взят файл финансиста, решение менеджмента. Odoo по дате счёта: %.0f млн' % (sum(INV[m] for m in fm_) / 1e6))
+        chk('Выручка февраль–март 2026', 'Пакет, PL_Linko (взято)', sum(HV[m]['revt'] for m in fm_), 'Odoo по дате счёта', sum(recm(m) for m in fm_),
+            'Биллинг в Odoo до апреля неполный (счета заводились не на все оплаты) — взят файл финансиста, решение менеджмента')
     if 'cash' in HC.get('2026-03', {}): chk('Остаток денег на 31.03.2026', 'Пакет (ДДС)', HC['2026-03']['cash']['end'], 'Odoo (взято)', CASH_END['2026-03'],
             'Апрель начинается с остатка Odoo; разница — в «прочих движениях» марта на вкладке «Деньги и запас»')
     pk = (HIST or {}).get('pack_chk', {}); a4 = [m for m in ('2026-04', '2026-05', '2026-06', '2026-07') if m in MS and m in pk]
-    if a4: chk('Выручка апрель–%s 2026' % RUS[a4[-1]].lower(), 'Пакет: оплаченные счета Odoo', sum(pk[m]['rev'] for m in a4), 'Пульт: по периоду услуги (взято)', sum(recm(m) for m in a4),
-               'Пакет брал только оплаченные счета по дате; пульт — все счета, разнесённые по периоду услуги. Как в Odoo (все счета по дате): %.0f млн' % (sum(INV[m] for m in a4) / 1e6))
+    if a4: chk('Выручка апрель–%s 2026' % RUS[a4[-1]].lower(), 'Пакет: оплаченные счета Odoo', sum(pk[m]['rev'] for m in a4), 'Пульт: Odoo по дате счёта (взято)', sum(recm(m) for m in a4),
+               'Пакет брал только оплаченные счета; пульт — все проведённые счета по дате (учётная политика)')
 chk('Оплачено вперёд за будущие месяцы на срез', 'Пульт: по строкам счетов (справочно)', L_DEF, 'Odoo: остаток счёта 201000', -GL201,
     'Odoo формировал отсрочку только по счетам янв–апр 2026 и перестал списывать её в апреле; с мая по политике компании выручка признаётся сразу. Пульт считает заново по периодам в строках счетов, в баланс не включает')
 chk('Дебиторка на срез', 'Открытые счета клиентов', sum(AR.values()), 'Сальдо счетов клиентов Odoo (в балансе)', A_AR,
@@ -448,7 +450,7 @@ if LOANS_OK and '2026-07' in DEBT_END and PBS: chk('Займы на 31.07.2026',
                  'Все долги ведутся только в разделе «Долги»; на срез займы — %.0f млн (после 31.07 добавлены новые займы и выплаты)' % (L_LOAN / 1e6))
 SRCS = [('Янв–дек 2025', 'Файл финансиста PL_last_v.xlsx, лист P&L (факт)', 'По оплатам', 'Выручка = деньги от клиентов, расходы = оплаты. Техника и «Финансирование Tap» вынесены под EBITDA'),
         ('Янв–мар 2026', 'Управленческий пакет: P&L (PL_Linko) и ДДС', 'По оплатам', 'Выручка — файл финансиста (в Odoo биллинг до апреля неполный). Деньги: январь — выписка, февраль–март — Odoo и выписки'),
-        ('С апреля 2026', 'Odoo linktrade (только чтение) + раздел «Долги» пульта', 'По периоду услуги', 'Выручка — строки счетов по дням периода; расходы — реестр «Расходы» за период; деньги — остатки счетов Odoo'),
+        ('С апреля 2026', 'Odoo linktrade (только чтение) + раздел «Долги» пульта', 'По дате счёта', 'Выручка — проведённые счета клиентам по дате счёта (вся сумма сразу); расходы — реестр «Расходы» за период; деньги — остатки счетов Odoo'),
         ('Долги', 'Раздел «Долги» пульта (ведётся вручную)', '—', 'Единственный источник по займам, долгам поставщикам и по зарплате; из Odoo долги не берутся'),
         ('Курс', 'Управленческий курс', '12 000 сум/$', 'Все суммы в долларах (подписки, расходы, валютные счета, долги)')]
 ws = wb.create_sheet('Источники и методика')
@@ -459,8 +461,8 @@ for x in CHK: datarow(ws, r, [x['what'], x['a_lab'], None if x['a'] is None else
 widths(ws, {'A': 30, 'B': 34, 'C': 16, 'D': 34, 'E': 16, 'F': 14, 'G': 90})
 wb._sheets = [ws2 for nm in ('P&L и EBITDA', 'История с 2025', 'Деньги и запас', 'Баланс на срез', 'Выручка и оплачено вперёд', 'Сегменты клиентов', 'NRR и GRR за год', 'Источники и методика') for ws2 in wb.worksheets if ws2.title == nm]
 fn = OUTP('Финансы_для_банка_%s_2026_%s.xlsx' % (PERIOD.replace('–', '-'), SUF)); wb.save(fn)
-res = {'MC': MC, 'BR': BR, 'HIST': {'M': HM, 'ROWS': HROWS, 'Y': list(YK.values())}, 'BAL': BAL, 'BREF': BREF, 'CHK': CHK, 'SRCS': SRCS, 'HFILES': (HIST or {}).get('files'),
-       'CAPEX': {m: CAPEX[m] for m in MS}, 'MS': MS, 'MR': MR, 'PL': PL, 'REC': {'%s|%s' % kk: v for kk, v in REC.items() if kk[1] in MR}, 'INV': {m: INV[m] for m in MR}, 'IN': {m: IN[m] for m in MR}, 'MRR': MRR_END,
+res = {'MC': MC, 'BR': None, 'HIST': {'M': HM, 'ROWS': HROWS, 'Y': list(YK.values())}, 'BAL': BAL, 'BREF': BREF, 'CHK': CHK, 'SRCS': SRCS, 'HFILES': (HIST or {}).get('files'),
+       'CAPEX': {m: CAPEX[m] for m in MS}, 'MS': MS, 'MR': MR, 'PL': PL, 'REC': {'%s|%s' % kk: v for kk, v in INVK.items() if kk[1] in MR}, 'INV': {m: INV[m] for m in MR}, 'IN': {m: IN[m] for m in MR}, 'MRR': MRR_END,
        'DEF': {m: DEF.get(m, 0) for m in MR}, 'OPX': {lab: v for lab, v in OPX}, 'COGS_FOT': COGS_FOT, 'HOST': HOST, 'CS': CS, 'AVG3': avg3, 'LOANS_OK': LOANS_OK,
        'ACC': {('%s · %s' % (code, ACC[code]['name'])): bal_at(code, LAST_M) for code in ACC}, 'AR': {b: AR[b] for b in BK}, 'ARN': {b: ARN[b] for b in BK}, 'UNM': F['unmatched'],
        'SEG': SR, 'SEGS': SEGS, 'COH': COH, 'NMON': NMON, 'RET': RET, 'MONTHLY': MONTHLY, 'GRR_ADJ_Y': GRR_ADJ_Y, 'GRR_REP_Y': GRR_REP_Y, 'CON_T': CON_T, 'CON_B': CON_B}
@@ -469,7 +471,7 @@ print(fn)
 for m in MS: print(m, {k: round(v / 1e6, 1) for k, v in PL[m].items()}, '| деньги', {k: round((v or 0) / 1e6, 1) for k, v in CS[m].items() if not isinstance(v, str)})
 print('avg3', round(avg3 / 1e6, 1), 'loans', LOANS_OK)
 for m in MC[:3]: print(m, {k: (v if isinstance(v, str) else round((v or 0) / 1e6, 1)) for k, v in CS[m].items()})
-for m in MS: print('мостик', m, {k: round(v / 1e6, 1) for k, v in BR[m].items()}, 'odoo', round(INV[m] / 1e6, 1), 'ebitda_odoo', round(PL[m]['ebitda_odoo'] / 1e6, 1))
+pass
 for lab, v, _ in BAL + BREF: print('БАЛ', lab, None if v is None else round(v / 1e6, 1))
 for x in CHK: print('СВЕРКА', x['what'], x['a_lab'], round((x['a'] or 0) / 1e6, 1), '|', x['b_lab'], round((x['b'] or 0) / 1e6, 1))
 for lab, kind, vals, tot in HROWS: print('ИСТ', lab, {k: (round(v / 1e6, 1) if kind == 'm' else round(v, 3) if v is not None else None) for k, v in tot.items()})

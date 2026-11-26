@@ -8,8 +8,10 @@ from cfg_cut import *
 db = OdooDB(); K = 12000
 out = {}
 # 1. строки счетов клиентам (без НДС), доллары по 12 000
-out['inv'] = [{'d': str(r['d']), 'pid': r['pid'], 'a': float(r['a'] or 0), 'd1': str(r['d1']) if r['d1'] else None, 'd2': str(r['d2']) if r['d2'] else None}
+out['inv'] = [{'d': str(r['d']), 'pid': r['pid'], 'a': float(r['a'] or 0), 'd1': str(r['d1']) if r['d1'] else None, 'd2': str(r['d2']) if r['d2'] else None,
+                'paid': float(r['paid']) if r['paid'] is not None else 1.0}   # оплаченная доля счёта (по остатку долга на сегодня)
     for r in db.query(f"""select m.invoice_date d, l.product_id pid, l.deferred_start_date d1, l.deferred_end_date d2,
+       case when m.move_type='out_invoice' and m.amount_total<>0 then greatest(0, least(1, 1 - m.amount_residual / m.amount_total)) end paid,
        (case when m.move_type='out_refund' then -1 else 1 end) * (case when m.currency_id=1 then l.price_subtotal*{K} else l.price_subtotal end) a
      from account_move_line l join account_move m on m.id=l.move_id
      where m.state='posted' and m.move_type in ('out_invoice','out_refund') and l.display_type='product'""")]   # все счета: выручка периода до среза признаётся и по счетам, выставленным позже

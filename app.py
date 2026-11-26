@@ -14,6 +14,30 @@ LOCK = threading.Lock()
 def role():
     """Роль пользователя: admin — всё; viewer — только просмотр (без пересборок, смены среза и ввода данных). data/config.json → perms.<логин>.role"""
     return ((CFG.get('perms') or {}).get(session.get('u') or '', {}) or {}).get('role', 'admin')
+RO = ('viewer', 'bank')     # роли только для просмотра
+# ---- доступ для банка (роль bank, 26.11.2026): что убрано из данных и файлов ----
+BANK_DOCS = {'debts', 'fin_cash', 'fin_bal', 'fin_src', 'fin_plan', 'exp'}                     # вкладки целиком
+BANK_CHARTS = {'mrr_jerr', 'payroll_dep', 'ar_age', 'cash_tab', 'cash_flow', 'cash_bal', 'cash_acc', 'bal_tab', 'src_tab', 'src_check', 'exp_cash', 'exp_period', 'exp_flow', 'exp_cat'}
+BANK_KEYS = {'f_ar', 'f_ar90', 'f_unm', 'h_capex_tap', 'cash_cum'}
+BANK_ROWS = {('hist_tab', 'Справочно: EBITDA в исходном файле'), ('seg_mrr', 'Расхождения журнала Odoo')}
+BANK_FILES_BLOCK = {'debts', 'org', 'calls', 'exp'}                                              # файлы с персональными данными и внутренним учётом
+BANK_SHEETS_DROP = {'fin': ('Деньги и запас', 'Баланс на срез', 'Источники и методика'), 'cost': ('Сотрудники отделов',)}
+def bank_rows(M, S):
+    M = [r for r in M if r['doc'] not in BANK_DOCS and r['key'] not in BANK_KEYS]
+    S = [r for r in S if r['chart'] not in BANK_CHARTS and (r['chart'], r['x']) not in BANK_ROWS]
+    return M, S
+def bank_xlsx(doc, body):
+    import io, openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(body))
+    for nm in BANK_SHEETS_DROP.get(doc, ()):
+        if nm in wb.sheetnames: del wb[nm]
+    for ws in wb.worksheets:      # строки, которые банку не показываем
+        for r in range(ws.max_row, 0, -1):
+            a = ws.cell(r, 1).value
+            if isinstance(a, str) and (a.startswith('Справочно: EBITDA в исходном файле') or a.startswith('Дебиторка на') or a.startswith('ИТОГО неоплаченных') or a.startswith('Поступления, не привязанные')
+                                       or a in ('не просрочено', 'до 30 дней', '31–90 дней', '91–180 дней', 'больше 180 дней') or a.startswith('Дебиторка завышена') or 'сторнировать' in a or '201000' in a):
+                ws.delete_rows(r)
+    out = io.BytesIO(); wb.save(out); return out.getvalue()
 now = lambda: datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 def db():
     c = sqlite3.connect(DB, timeout=30); c.row_factory = sqlite3.Row; return c
@@ -88,6 +112,11 @@ def healthz(): return 'ok'
 def index():
     html = open(os.path.join(app.static_folder, 'index.html'), encoding='utf-8').read()
     if role() == 'viewer': html = html.replace('<body>', '<body class="pl-ro">', 1)
+    if role() == 'bank':
+        html = html.replace('<body>', '<body class="pl-ro pl-bank">', 1)
+        for t in (' Дебиторка завышена: много поступлений в Odoo не привязано к счетам, поэтому оплаченные счета числятся неоплаченными.',
+                  ', поэтому EBITDA 2025 лучше, чем в файле финансиста, ровно на эти суммы (строка «EBITDA в исходном файле»)'):
+            html = html.replace(t, '' if t.startswith(' ') else '')
     return Response(html, mimetype='text/html', headers={'Cache-Control': 'no-store'})
 @app.route('/api/me')
 def api_me(): return jsonify(user=session.get('u'), role=role())
@@ -107,17 +136,22 @@ def api_data():
     with db() as c: rows = c.execute('select * from cutdata order by cut').fetchall()
     M, S = [], []
     for r in rows: M += json.loads(r['metrics']); S += json.loads(r['series'])
+    if role() == 'bank': M, S = bank_rows(M, S); return jsonify(metrics=M, series=S, status=None, measured={r['cut']: r['measured_at'] for r in rows})
     return jsonify(metrics=M, series=S, status=last_run(), measured={r['cut']: r['measured_at'] for r in rows})
 @app.route('/api/status')
-def api_status(): return jsonify(status=last_run())
+def api_status(): return jsonify(status=None if role() == 'bank' else last_run())
 @app.route('/api/file')
 def api_file():
     with db() as c: f = c.execute('select name, body from file where cut=? and doc=?', (request.args.get('cut', ''), request.args.get('doc', ''))).fetchone()
     if not f: return 'Файл для этого среза не собран', 404
-    return Response(bytes(f['body']), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="linko_%s_%s.xlsx"; filename*=UTF-8\'\'%s' % (request.args.get('doc', ''), request.args.get('cut', ''), quote(f['name']))})
+    body = bytes(f['body'])
+    if role() == 'bank':
+        if request.args.get('doc', '') in BANK_FILES_BLOCK: return 'Нет доступа к этому файлу', 403
+        body = bank_xlsx(request.args.get('doc', ''), body)
+    return Response(body, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': 'attachment; filename="linko_%s_%s.xlsx"; filename*=UTF-8\'\'%s' % (request.args.get('doc', ''), request.args.get('cut', ''), quote(f['name']))})
 @app.route('/api/refresh', methods=['POST'])
 def api_refresh():
-    if role() == 'viewer': return jsonify(error='У вас доступ только на просмотр'), 403
+    if role() in RO: return jsonify(error='У вас доступ только на просмотр'), 403
     j = request.get_json(silent=True) or {}; cut = str(j.get('cut', '')); docs = str(j.get('docs', 'all'))
     m = re.fullmatch(r'2026-(0[89]|1[0-2])-(\d\d)', cut)
     if not m or int(m.group(2)) != calendar.monthrange(2026, int(m.group(1)))[1]: return jsonify(error='Срез должен быть концом месяца 2026 года, начиная с августа'), 400
@@ -141,7 +175,8 @@ TLOCK = threading.Lock()
 @app.route('/api/today')
 def api_today():
     import time
-    force = request.args.get('force') == '1' and role() != 'viewer'
+    if role() == 'bank': return jsonify(error='Нет доступа'), 403
+    force = request.args.get('force') == '1' and role() not in RO
     with TLOCK:
         if force or not TODAY['data'] or time.time() - TODAY['at'] > 600:
             try:
@@ -167,7 +202,8 @@ def plan_dir():
 def api_plan():
     """План поступлений на 6 месяцев — считается на сегодня (pult/plan.py), хранится в data/plan/. Пересчёт: раз в 6 часов или по кнопке (не для просмотра)."""
     import time
-    fp = os.path.join(plan_dir(), 'plan.json'); force = request.args.get('force') == '1' and role() != 'viewer'
+    if role() == 'bank': return jsonify(error='Нет доступа'), 403
+    fp = os.path.join(plan_dir(), 'plan.json'); force = request.args.get('force') == '1' and role() not in RO
     old = os.path.exists(fp) and (time.time() - os.path.getmtime(fp) > 6 * 3600 or json.load(open(fp, encoding='utf-8')).get('today') != datetime.date.today().isoformat())
     err = None
     if force or not os.path.exists(fp) or old:
@@ -185,6 +221,7 @@ def api_plan():
     return jsonify(d)
 @app.route('/api/plan/file')
 def api_plan_file():
+    if role() == 'bank': return 'Нет доступа', 403
     fp = os.path.join(plan_dir(), 'plan.json')
     if not os.path.exists(fp): return 'План ещё не посчитан', 404
     fn = json.load(open(fp, encoding='utf-8'))['file']; path = os.path.join(plan_dir(), fn)
@@ -192,6 +229,7 @@ def api_plan_file():
     return Response(open(path, 'rb').read(), mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition': "attachment; filename=\"linko_plan.xlsx\"; filename*=UTF-8''%s" % quote(fn)})
 @app.route('/api/history')
 def api_history():
+    if role() == 'bank': return jsonify(runs=[])
     with db() as c: rows = c.execute('select id, started, finished, state, cut, docs, msg, who from run order by id desc limit 50').fetchall()
     return jsonify(runs=[dict(r) for r in rows])
 init()

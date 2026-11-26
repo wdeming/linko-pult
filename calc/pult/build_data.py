@@ -243,7 +243,7 @@ for cut in cuts:
         for mm in MSx:
             for k2, nm in (('rev', 'Выручка'), ('cogs', 'Себестоимость'), ('opex', 'Операционные расходы'), ('ebitda', 'EBITDA')): ser('pl_chart', ml(mm), nm, PLd[mm][k2])
         if PLm:
-            add('fin_pl', 'f_rev', 'Выручка за месяц (признанная)', PLm['rev'], 'm', 'up'); add('fin_pl', 'f_gm', 'Валовая маржа', PLm['gp'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
+            add('fin_pl', 'f_rev', 'Выручка за месяц (по дате счёта)', PLm['rev'], 'm', 'up'); add('fin_pl', 'f_gm', 'Валовая маржа', PLm['gp'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
             add('fin_pl', 'f_opex', 'Операционные расходы за месяц', PLm['opex'], 'm', 'down'); add('fin_pl', 'f_ebitda', 'EBITDA за месяц', PLm['ebitda'], 'm', 'up')
             add('fin_pl', 'f_ebitda_pct', 'EBITDA, % выручки', PLm['ebitda'] / PLm['rev'] if PLm['rev'] else None, 'p', 'up')
             add('fin_pl', 'f_ebitda_cum', 'EBITDA с апреля, накопленно', sum(PLd[mm]['ebitda'] for mm in MSx), 'm', 'up')
@@ -268,10 +268,10 @@ for cut in cuts:
                 add('fin_cash', 'f_loans_m', 'Займы получены за месяц', cm['lt'], 'm', ''); add('fin_cash', 'f_debt', 'Долг по займам на конец месяца', cm['debt'], 'm', 'down')
                 add('fin_cash', 'f_loans_cum', 'Займы с апреля, нетто', sum(CSx[mm]['lt'] - CSx[mm]['lp'] for mm in MSx), 'm', '')
         for mm in FN['MR']:
-            ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Признано', sum(RECx.get('%s|%s' % (k, mm), 0) for k in REVK))
-            ser('rev_lines', ml(mm), 'Выставлено', FN['INV'][mm]); ser('rev_lines', ml(mm), 'Получено', FN['IN'][mm])
+            ser('rev_lines', ml(mm), 'MRR', FN['MRR'][mm]); ser('rev_lines', ml(mm), 'Выручка', sum(RECx.get('%s|%s' % (k, mm), 0) for k in REVK))
+            ser('rev_lines', ml(mm), 'Получено', FN['IN'][mm])
             ser('rev_def', ml(mm), 'Оплачено вперёд', FN['DEF'][mm])
-            ser('rev_sfa', ml(mm), 'Признано SFA', rkx('Подписки SFA', mm))
+            ser('rev_sfa', ml(mm), 'Выручка SFA', rkx('Подписки SFA', mm))
         for b, v in FN['AR'].items(): ser('ar_age', b, 'Сумма', v)
         HI = FN.get('HIST')      # история с 2025: файл финансиста, пакет, Odoo
         if HI and HI['M']:
@@ -298,9 +298,10 @@ for cut in cuts:
                 ser('src_tab', row[0], 'Источник', row[1]); ser('src_tab', row[0], 'Учёт выручки', row[2]); ser('src_tab', row[0], 'Как посчитано', row[3])
             for x in FN.get('CHK', []):
                 for col, k2 in (('Источник А', 'a_lab'), ('Сумма А', 'a'), ('Источник Б', 'b_lab'), ('Сумма Б', 'b'), ('Разница', 'diff'), ('Что взято и почему', 'note')): ser('src_check', x['what'], col, x[k2])
-        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Признано за месяц', sum(rkx(k, m) for k in REVK), 'm', 'up')
-        add('fin_rev', 'f_inv', 'Выставлено за месяц', FN['INV'][m], 'm', 'up'); add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
-        add('fin_rev', 'f_def', 'Оплачено вперёд за будущие месяцы', FN['DEF'][m], 'm', '')
+        add('fin_rev', 'f_mrr', 'MRR на конец месяца', FN['MRR'][m], 'm', 'up'); add('fin_rev', 'f_rec', 'Выручка за месяц (по дате счёта)', sum(rkx(k, m) for k in REVK), 'm', 'up')
+        add('fin_rev', 'f_in', 'Получено за месяц', FN['IN'][m], 'm', 'up')
+        if m >= '2026-10': add('fin_rev', 'f_mrr0', 'MRR на 01.01.2026 (данные менеджмента)', 440e6, 'm', ''); add('fin_rev', 'f_mrr_ytd', 'Рост MRR с начала года', FN['MRR'][m] / 440e6 - 1, 'p', 'up')
+        add('fin_rev', 'f_def', 'Оплачено клиентами вперёд за будущие месяцы', FN['DEF'][m], 'm', '')
         add('fin_rev', 'f_ar', 'Неоплаченные счета (дебиторка)', sum(FN['AR'].values()), 'm', 'down'); add('fin_rev', 'f_ar90', 'из них просрочены больше 90 дней', FN['AR']['91–180 дней'] + FN['AR']['больше 180 дней'], 'm', 'down')
         add('fin_rev', 'f_unm', 'Поступления, не привязанные к счетам', FN['UNM']['s'], 'm', 'down')
         SGx = FN['SEG']

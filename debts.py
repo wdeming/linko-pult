@@ -34,6 +34,7 @@ def install(app, db, now, cfg, calc):
     app.register_blueprint(bp)
 def perm():
     p = (G['cfg'].get('perms') or {}).get(session.get('u') or '', {}) or {}
+    if p.get('role') == 'bank': return 'none'      # доступ для банка: долги не показываются (26.11.2026)
     return p.get('debts', 'view' if p.get('role') == 'viewer' else 'edit')
 class Bad(Exception): pass
 @bp.errorhandler(Bad)
